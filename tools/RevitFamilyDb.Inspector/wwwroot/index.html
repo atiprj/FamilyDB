@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DB Family Inspector</title>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+html, body, * , *::before, *::after {
+  font-family: "IBM Plex Sans", Calibri, "Segoe UI", Arial, sans-serif !important;
+}
+body { margin: 16px; color: #fff; background: #1a1a1a; }
+h1 { margin: 0 0 12px; font-size: 24px; color: #fff; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+.card { border: 1px solid #3e3e3e; border-radius: 12px; padding: 10px; background: #222; }
+.card b { display: block; margin-bottom: 4px; }
+input, select, button { padding: 7px 10px; border: 1px solid #4b4b4b; border-radius: 10px; background: #2f2f2f; color: #fff; }
+button { background: #1f538d; border: 0; cursor: pointer; }
+button:hover { filter: brightness(1.08); }
+button:active { transform: translateY(1px); }
+.search-wrap { position: relative; display: inline-flex; align-items: center; }
+.search-wrap input { padding-left: 40px; }
+.search-icon {
+  position: absolute;
+  left: 9px;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  opacity: .95;
+  background: url('/assets/icons/search.png') center/contain no-repeat;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { border: 1px solid #3e3e3e; padding: 6px; text-align: left; vertical-align: top; }
+td.preview-cell { padding: 0; width: 74px; min-width: 74px; max-width: 74px; }
+th { background: #2f2f2f; position: sticky; top: 0; color: #fff; }
+tbody tr { cursor: pointer; background: #222; }
+tbody tr:hover { background: #294a6d; }
+.muted { color: #b5b5b5; font-size: 12px; }
+.ok { color: #0a7a0a; }
+.pv { width: 100%; height: 56px; display: inline-flex; align-items: center; justify-content: center; border-radius: 0; overflow: hidden; border: 0; background: #1f1f1f; }
+.pv img { width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.pv.ph { font-weight: 700; color: #444; font-size: 13px; }
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 50; align-items: center; justify-content: center; }
+.modal-bg.open { display: flex; }
+.modal { background: #1f1f1f; border: 1px solid #3e3e3e; border-radius: 12px; max-width: 900px; width: 92%; max-height: 88vh; overflow: auto; padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,.35); color: #fff; }
+.modal h2 { margin: 0 0 10px; font-size: 18px; }
+.param-table { font-size: 12px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+.warn { color: #e0bf74; font-size: 12px; }
+.filter-wrap { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.filter-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  background: #202020;
+  border: 1px solid #4b4b4b;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.12);
+  width: 320px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+}
+.filter-pop.open { display: block; }
+.filter-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.cat-item { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 13px; }
+.cat-count { color: #b5b5b5; font-size: 12px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.brand img { height: 28px; width: auto; object-fit: contain; }
+.btn-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 0;
+  background: url('/assets/icons/close.png') center/contain no-repeat;
+  color: transparent;
+  font-size: 0;
+  line-height: 1;
+  padding: 0;
+  filter: none;
+}
+.btn-close:hover { background: url('/assets/icons/close-hover.png') center/contain no-repeat; filter: none; }
+.app-nav { margin: 8px 0 14px; font-size: 14px; }
+.app-nav a { color: #7eb8ff; text-decoration: none; }
+.app-nav a:hover { text-decoration: underline; }
+.app-nav .sep { color: #666; margin: 0 6px; }
+.metric-list { line-height: 1.75; font-size: 14px; }
+.metric-list .metric-row { margin-bottom: 6px; }
+.metric-list .label { color: #b5b5b5; }
+.metric-list b { color: #fff; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <nav class="app-nav" aria-label="Navigazione principale">
+    <span>Elenco famiglie</span>
+    <span class="sep">|</span>
+    <a href="/report-status.html">Report Status</a>
+  </nav>
+  <div class="brand">
+    <img id="brandLogo" src="/assets/logo.png" alt="Logo aziendale" onerror="this.style.display='none'" />
+    <h1 style="margin:0">DB Family Inspector</h1>
+  </div>
+  <div id="health" class="muted">Connessione...</div>
+  <div class="row" style="margin-top:4px;">
+    <button type="button" id="btnApiKey" title="Se la coda è protetta da API key">API key coda…</button>
+    <span class="muted" id="apiKeyStatus"></span>
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <button type="button" id="btnRefresh">Aggiorna elenco</button>
+    <span class="muted" id="queueInfo">Coda Web→Revit: …</span>
+    <span class="warn">Dopo <b>Push libreria → DB</b> in Revit le anteprime e i parametri si popolano. Poi <b>Metti in coda</b> qui e in Revit <b>Applica coda Web → progetto</b>.</span>
+  </div>
+
+  <div class="row">
+    <div class="card"><b>Tabelle</b><div id="tables">-</div></div>
+  </div>
+
+  <div class="row">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true"></span>
+      <input id="q" placeholder="Cerca (famiglia/categoria/path)" style="min-width:260px;" />
+    </div>
+    <select id="discipline">
+      <option value="">Disciplina: tutte</option>
+      <option>ARC</option>
+      <option>FUR</option>
+    </select>
+    <select id="kind">
+      <option value="">Tipo: tutti</option>
+      <option>Loadable</option>
+      <option>System</option>
+    </select>
+    <div class="filter-wrap">
+      <button id="btnCategoryFilter" type="button">Categorie: tutte</button>
+      <div id="categoryPop" class="filter-pop">
+        <div class="filter-actions">
+          <button id="catAll" type="button">Seleziona tutte</button>
+          <button id="catNone" type="button">Pulisci filtro</button>
+        </div>
+        <div id="categoryList"></div>
+      </div>
+    </div>
+    <input id="take" type="number" min="1" max="2000" value="300" style="width:90px;" />
+    <button id="reload" type="button">Filtra</button>
+  </div>
+
+  <div class="muted" id="count">-</div>
+  <div style="max-height:62vh; overflow:auto; border:1px solid #ddd;">
+    <table>
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Preview</th>
+          <th>Disciplina</th>
+          <th>Categoria</th>
+          <th>Nome famiglia</th>
+          <th>Nome tipo</th>
+          <th>Azioni</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div id="modal" class="modal-bg" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h2 id="mTitle">Dettaglio famiglia</h2>
+      <div id="mBody" class="muted">…</div>
+      <div class="btn-row">
+        <button type="button" id="mEnqueue">Metti in coda per Revit (carica nel progetto)</button>
+        <button type="button" id="mCloseText">Chiudi</button>
+        <button type="button" id="mClose" class="btn-close" aria-label="Chiudi">×</button>
+      </div>
+    </div>
+  </div>
+
+  <script>(function (global) {
+  'use strict';
+
+  global.LS_KEY = 'revitFamilyDbApiKey';
+
+  global.el = function (id) {
+    return document.getElementById(id);
+  };
+
+  global.esc = function (v) {
+    return (v ?? '').toString()
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  };
+
+  global.enc = function (v) {
+    return encodeURIComponent(v ?? '');
+  };
+
+  global.queueAuthHeaders = function () {
+    const k = localStorage.getItem(global.LS_KEY);
+    if (!k) return {};
+    return { Authorization: 'Bearer ' + k };
+  };
+
+  global.api = function (path, opt) {
+    const o = opt || {};
+    const headers = new Headers(o.headers || {});
+    if (path.indexOf('/api/queue') === 0) {
+      const qh = global.queueAuthHeaders();
+      if (qh.Authorization) headers.set('Authorization', qh.Authorization);
+    }
+    return fetch(path, { ...o, headers }).then(async function (r) {
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || r.statusText);
+      }
+      const ct = r.headers.get('content-type');
+      if (ct && ct.indexOf('application/json') >= 0) return r.json();
+      return r.text();
+    });
+  };
+
+  global.apiOptional = async function (path) {
+    try {
+      const r = await fetch(path);
+      if (!r.ok) return null;
+      const ct = r.headers.get('content-type');
+      if (ct && ct.indexOf('application/json') >= 0) return r.json();
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  global.apiOptionalJson = async function (path) {
+    try {
+      const r = await fetch(path);
+      if (!r.ok) return null;
+      return await r.json();
+    } catch {
+      return null;
+    }
+  };
+
+  global.assertNotFileProtocol = function (onError) {
+    if (window.location.protocol === 'file:') {
+      if (typeof onError === 'function') {
+        onError();
+      }
+      throw new Error('Pagina aperta come file locale (file://)');
+    }
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(function () {
+  'use strict';
+
+  // In strict mode i globali devono essere presi esplicitamente da window (definiti in inspector-common.js).
+  var el = window.el;
+  var esc = window.esc;
+  var enc = window.enc;
+  var api = window.api;
+  var apiOptional = window.apiOptional;
+  var apiOptionalJson = window.apiOptionalJson;
+  var assertNotFileProtocol = window.assertNotFileProtocol;
+
+  const LS_KEY = window.LS_KEY || 'revitFamilyDbApiKey';
+  const selectedCategories = new Set();
+
+  function splitFamilyAndType(fullName) {
+    const src = (fullName || '').toString();
+    const idx = src.indexOf(':');
+    if (idx < 0) {
+      return { family: src.trim(), type: '' };
+    }
+    return {
+      family: src.substring(0, idx).trim(),
+      type: src.substring(idx + 1).trim()
+    };
+  }
+
+  let selectedFamilyId = null;
+
+  function normCat(v) {
+    return (v || '').toString().trim();
+  }
+
+  function updateCategoryButtonText() {
+    const btn = el('btnCategoryFilter');
+    const count = selectedCategories.size;
+    btn.textContent = count === 0 ? 'Categorie: tutte' : 'Categorie: ' + count + ' selezionate';
+  }
+
+  function renderCategoryOptions(rows) {
+    const counts = new Map();
+    for (const r of rows) {
+      const c = normCat(r.categoryName) || '(Senza categoria)';
+      counts.set(c, (counts.get(c) || 0) + 1);
+    }
+    for (const c of selectedCategories) {
+      if (!counts.has(c)) counts.set(c, 0);
+    }
+    const categories = [...counts.keys()].sort(function (a, b) { return a.localeCompare(b, 'it'); });
+    const list = el('categoryList');
+    list.innerHTML = '';
+    for (const c of categories) {
+      const row = document.createElement('label');
+      row.className = 'cat-item';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = selectedCategories.has(c);
+      chk.addEventListener('change', function () {
+        if (chk.checked) selectedCategories.add(c);
+        else selectedCategories.delete(c);
+        updateCategoryButtonText();
+        loadRows();
+      });
+      const txt = document.createElement('span');
+      txt.textContent = c;
+      const cnt = document.createElement('span');
+      cnt.className = 'cat-count';
+      cnt.textContent = '(' + counts.get(c) + ')';
+      row.appendChild(chk);
+      row.appendChild(txt);
+      row.appendChild(cnt);
+      list.appendChild(row);
+    }
+    updateCategoryButtonText();
+  }
+
+  function placeholder(kind, familyName, categoryName) {
+    const ch = (categoryName || familyName || '?').trim().charAt(0).toUpperCase() || '?';
+    const bg = (kind || '').toLowerCase() === 'system' ? '#d7e6ff' : '#e5f7e5';
+    return '<span class="pv ph" style="background:' + bg + '">' + esc(ch) + '</span>';
+  }
+
+  function previewCell(r) {
+    if (r.previewPath) {
+      return '<span class="pv"><img src="/api/preview?path=' + enc(r.previewPath) + '" alt="preview" loading="lazy" data-kind="' + esc(r.familyKind) + '" data-family="' + esc(r.familyName) + '" data-category="' + esc(r.categoryName) + '" onerror="previewFallback(this)" /></span>';
+    }
+    return placeholder(r.familyKind, r.familyName, r.categoryName);
+  }
+
+  window.previewFallback = function (img) {
+    try {
+      const kind = (img && img.getAttribute('data-kind')) || '';
+      const fam = (img && img.getAttribute('data-family')) || '';
+      const cat = (img && img.getAttribute('data-category')) || '';
+      if (img && img.parentElement) {
+        img.parentElement.outerHTML = placeholder(kind, fam, cat);
+      }
+    } catch (e) { /* ignore */ }
+  };
+
+  async function loadQueueInfo() {
+    try {
+      const q = await api('/api/queue/pending-count');
+      el('queueInfo').textContent = 'Coda Web→Revit (pending): ' + (q.pending != null ? q.pending : 0);
+    } catch (e) {
+      el('queueInfo').textContent = 'Coda: n/d';
+    }
+  }
+
+  function refreshApiKeyUi() {
+    const need = window.__queueNeedsKey === true;
+    const has = !!localStorage.getItem(LS_KEY);
+    el('apiKeyStatus').textContent = need
+      ? (has ? 'API key salvata (locale).' : 'API key richiesta per la coda: clic «API key coda…».')
+      : '';
+  }
+
+  async function loadMeta() {
+    assertNotFileProtocol(function () {
+      el('health').innerHTML =
+        '<span style="color:#b00">Apri questa app solo tramite il server: nella cartella Inspector esegui <code>dotnet run</code> (o <code>run-inspector.ps1</code>) e usa l\'indirizzo <code>http://localhost:…</code> mostrato in console. Non aprire <code>index.html</code> da Esplora file.</span>';
+    });
+
+    const ver = await apiOptional('/api/version');
+    const cfg = await apiOptionalJson('/api/config');
+    window.__queueNeedsKey = !!(cfg && cfg.queueApiKeyRequired);
+    refreshApiKeyUi();
+
+    const h = await api('/api/health');
+    const verLine = ver
+      ? ' · <span class="muted">' + esc(ver.product) + ' ' + esc(ver.version) + '</span>'
+      : '';
+    el('health').innerHTML = '<span class="ok">Connesso</span> a DB: <b>' + esc(h.dbName) + '</b>' + verLine;
+
+    const tables = await api('/api/tables');
+    el('tables').textContent = tables.join(', ');
+  }
+
+  function bindRowClicks() {
+    el('rows').querySelectorAll('tr').forEach(function (tr) {
+      const ex = tr.querySelector('.btnExplore');
+      if (ex) {
+        ex.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const id = parseFamilyIdFromRow(tr);
+          if (id != null) openDetail(id);
+        });
+      }
+      const q = tr.querySelector('.btnQueue');
+      if (q) {
+        q.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const id = parseFamilyIdFromRow(tr);
+          if (id != null) enqueueFamily(id);
+        });
+      }
+    });
+  }
+
+  function parseFamilyIdFromRow(tr) {
+    const raw = tr && tr.dataset ? tr.dataset.fid : undefined;
+    if (raw === undefined || raw === '') return null;
+    const id = parseInt(raw, 10);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+
+  async function loadRows() {
+    const p = new URLSearchParams();
+    if (el('q').value.trim()) p.set('q', el('q').value.trim());
+    if (el('discipline').value) p.set('discipline', el('discipline').value);
+    if (el('kind').value) p.set('kind', el('kind').value);
+    p.set('take', el('take').value || '300');
+
+    const rawRows = await api('/api/families?' + p.toString());
+    renderCategoryOptions(rawRows);
+    const rows = rawRows.filter(function (r) {
+      if (selectedCategories.size === 0) return true;
+      const c = normCat(r.categoryName) || '(Senza categoria)';
+      return selectedCategories.has(c);
+    });
+    el('count').textContent = 'Righe trovate: ' + rows.length;
+    el('rows').innerHTML = rows.map(function (r) {
+      const n = splitFamilyAndType(r.familyName);
+      const fid = r.familyId != null && r.familyId > 0 ? ' data-fid="' + esc(r.familyId) + '"' : '';
+      return '<tr' + fid + '>' +
+        '<td>' + esc(r.familyId) + '</td>' +
+        '<td class="preview-cell">' + previewCell(r) + '</td>' +
+        '<td>' + esc(r.sourceDiscipline) + '</td>' +
+        '<td>' + esc(r.categoryName) + '</td>' +
+        '<td>' + esc(n.family) + '</td>' +
+        '<td>' + esc(n.type) + '</td>' +
+        '<td>' +
+        '<button type="button" class="btnExplore">Esplora</button> ' +
+        '<button type="button" class="btnQueue">In coda Revit</button>' +
+        '</td></tr>';
+    }).join('');
+    bindRowClicks();
+    await loadQueueInfo();
+  }
+
+  async function openDetail(familyId) {
+    if (familyId == null || !Number.isFinite(familyId) || familyId <= 0) {
+      window.alert('Nessun FamilyId valido per questa riga (dati incompleti nel DB).');
+      return;
+    }
+    selectedFamilyId = familyId;
+    const data = await api('/api/family/' + familyId);
+    const f = data.family;
+    el('mTitle').textContent = (f.familyName || '') + ' (' + (f.familyKind || '') + ')';
+    const pv = f.previewPath
+      ? '<div style="margin-bottom:10px"><img src="/api/preview?path=' + enc(f.previewPath) + '" alt="" style="max-height:180px;border:1px solid #ddd;border-radius:8px;" onerror="this.style.display=\'none\'" /></div>'
+      : '';
+    const meta =
+      '<div style="font-size:13px;line-height:1.5;margin-bottom:10px;">' +
+      '<div><b>FamilyId</b>: ' + esc(f.familyId) + '</div>' +
+      '<div><b>Categoria</b>: ' + esc(f.categoryName) + '</div>' +
+      '<div><b>Disciplina</b>: ' + esc(f.sourceDiscipline) + '</div>' +
+      '<div><b>RfaPath</b>: ' + esc(f.rfaPath) + '</div>' +
+      '<div><b>SourceModelPath</b>: ' + esc(f.sourceModelPath) + '</div>' +
+      '<div><b>TypeId</b>: ' + esc(f.sourceElementTypeId) + '</div>' +
+      '<div><b>PreviewPath</b>: ' + esc(f.previewPath) + '</div>' +
+      '</div>';
+    const plist = (data.parameters || []).length
+      ? '<table class="param-table"><thead><tr><th>Parametro</th><th>Gruppo</th><th>Tipo</th><th>Valore</th></tr></thead><tbody>' +
+        data.parameters.map(function (p) {
+          return '<tr><td>' + esc(p.parameterName) + '</td><td class="muted">' + esc(p.parameterGroupName) + '</td><td class="muted">' + esc(p.storageType) + '</td><td>' + esc(p.stringValue) + '</td></tr>';
+        }).join('') +
+        '</tbody></table>'
+      : '<div class="muted">Nessun parametro in DB (eseguire Push libreria → DB da Revit dopo aggiornamento).</div>';
+    el('mBody').innerHTML = pv + meta + '<h3 style="font-size:15px;margin:12px 0 6px">Parametri (' + (data.parameters || []).length + ')</h3>' + plist;
+    el('modal').classList.add('open');
+  }
+
+  async function enqueueFamily(familyId) {
+    try {
+      await api('/api/queue/enqueue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familyId: familyId })
+      });
+      window.alert('Accodata. In Revit: comando «Applica coda Web → progetto».');
+      await loadQueueInfo();
+    } catch (e) {
+      window.alert('Errore: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  el('mClose').addEventListener('click', function () { el('modal').classList.remove('open'); });
+  el('mCloseText').addEventListener('click', function () { el('modal').classList.remove('open'); });
+  el('modal').addEventListener('click', function (e) { if (e.target === el('modal')) el('modal').classList.remove('open'); });
+  el('mEnqueue').addEventListener('click', function () {
+    if (selectedFamilyId) enqueueFamily(selectedFamilyId);
+  });
+
+  el('btnApiKey').addEventListener('click', function () {
+    const cur = localStorage.getItem(LS_KEY) || '';
+    const v = window.prompt('API key per /api/queue (lasciare vuoto per rimuovere):', cur);
+    if (v === null) return;
+    const t = v.trim();
+    if (t) localStorage.setItem(LS_KEY, t);
+    else localStorage.removeItem(LS_KEY);
+    refreshApiKeyUi();
+    loadQueueInfo();
+  });
+
+  el('rows').addEventListener('dblclick', function (e) {
+    if (e.target.closest('button')) return;
+    const tr = e.target.closest('tr');
+    if (!tr || tr.parentElement !== el('rows')) return;
+    const id = parseFamilyIdFromRow(tr);
+    if (id != null) openDetail(id);
+  });
+
+  el('reload').addEventListener('click', loadRows);
+  el('btnCategoryFilter').addEventListener('click', function (e) {
+    e.stopPropagation();
+    el('categoryPop').classList.toggle('open');
+  });
+  el('catAll').addEventListener('click', function () {
+    const all = el('categoryList').querySelectorAll('label.cat-item');
+    selectedCategories.clear();
+    for (const node of all) {
+      const name = node.querySelector('span') ? node.querySelector('span').textContent : '';
+      if (name) selectedCategories.add(name);
+    }
+    updateCategoryButtonText();
+    loadRows();
+  });
+  el('catNone').addEventListener('click', function () {
+    selectedCategories.clear();
+    updateCategoryButtonText();
+    loadRows();
+  });
+  document.addEventListener('click', function (e) {
+    const wrap = e.target.closest('.filter-wrap');
+    if (!wrap) {
+      el('categoryPop').classList.remove('open');
+    }
+  });
+  el('btnRefresh').addEventListener('click', function () {
+    loadMeta().then(loadRows).catch(function (err) {
+      el('health').textContent = 'Errore: ' + err;
+    });
+  });
+  ['q', 'take'].forEach(function (id) {
+    el(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') loadRows(); });
+  });
+  ['discipline', 'kind'].forEach(function (id) {
+    el(id).addEventListener('change', loadRows);
+  });
+
+  loadMeta().then(loadRows).catch(function (err) {
+    el('health').textContent = 'Errore: ' + err;
+  });
+})();
+
+  </script>
+</body>
+</html>

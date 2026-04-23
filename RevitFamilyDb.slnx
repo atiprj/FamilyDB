@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RevitFamilyDb.Addin2023/RevitFamilyDb.Addin2023.csproj" />
+    <Project Path="src/RevitFamilyDb.Addin2024/RevitFamilyDb.Addin2024.csproj" />
+    <Project Path="src/RevitFamilyDb.Addin2025/RevitFamilyDb.Addin2025.csproj" />
+    <Project Path="src/RevitFamilyDb.Addin2026/RevitFamilyDb.Addin2026.csproj" />
+    <Project Path="src/RevitFamilyDb.Core/RevitFamilyDb.Core.csproj" />
+  </Folder>
+</Solution>

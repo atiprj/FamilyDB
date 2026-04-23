@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Report Status - DB Family Inspector</title>
+  <style>
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+html, body, * , *::before, *::after {
+  font-family: "IBM Plex Sans", Calibri, "Segoe UI", Arial, sans-serif !important;
+}
+body { margin: 16px; color: #fff; background: #1a1a1a; }
+h1 { margin: 0 0 12px; font-size: 24px; color: #fff; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+.card { border: 1px solid #3e3e3e; border-radius: 12px; padding: 10px; background: #222; }
+.card b { display: block; margin-bottom: 4px; }
+input, select, button { padding: 7px 10px; border: 1px solid #4b4b4b; border-radius: 10px; background: #2f2f2f; color: #fff; }
+button { background: #1f538d; border: 0; cursor: pointer; }
+button:hover { filter: brightness(1.08); }
+button:active { transform: translateY(1px); }
+.search-wrap { position: relative; display: inline-flex; align-items: center; }
+.search-wrap input { padding-left: 40px; }
+.search-icon {
+  position: absolute;
+  left: 9px;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  opacity: .95;
+  background: url('/assets/icons/search.png') center/contain no-repeat;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { border: 1px solid #3e3e3e; padding: 6px; text-align: left; vertical-align: top; }
+td.preview-cell { padding: 0; width: 74px; min-width: 74px; max-width: 74px; }
+th { background: #2f2f2f; position: sticky; top: 0; color: #fff; }
+tbody tr { cursor: pointer; background: #222; }
+tbody tr:hover { background: #294a6d; }
+.muted { color: #b5b5b5; font-size: 12px; }
+.ok { color: #0a7a0a; }
+.pv { width: 100%; height: 56px; display: inline-flex; align-items: center; justify-content: center; border-radius: 0; overflow: hidden; border: 0; background: #1f1f1f; }
+.pv img { width: 100%; height: 100%; object-fit: cover; background: #fff; }
+.pv.ph { font-weight: 700; color: #444; font-size: 13px; }
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 50; align-items: center; justify-content: center; }
+.modal-bg.open { display: flex; }
+.modal { background: #1f1f1f; border: 1px solid #3e3e3e; border-radius: 12px; max-width: 900px; width: 92%; max-height: 88vh; overflow: auto; padding: 16px; box-shadow: 0 8px 32px rgba(0,0,0,.35); color: #fff; }
+.modal h2 { margin: 0 0 10px; font-size: 18px; }
+.param-table { font-size: 12px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+.warn { color: #e0bf74; font-size: 12px; }
+.filter-wrap { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.filter-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  background: #202020;
+  border: 1px solid #4b4b4b;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.12);
+  width: 320px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+}
+.filter-pop.open { display: block; }
+.filter-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.cat-item { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 13px; }
+.cat-count { color: #b5b5b5; font-size: 12px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.brand img { height: 28px; width: auto; object-fit: contain; }
+.btn-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 0;
+  background: url('/assets/icons/close.png') center/contain no-repeat;
+  color: transparent;
+  font-size: 0;
+  line-height: 1;
+  padding: 0;
+  filter: none;
+}
+.btn-close:hover { background: url('/assets/icons/close-hover.png') center/contain no-repeat; filter: none; }
+.app-nav { margin: 8px 0 14px; font-size: 14px; }
+.app-nav a { color: #7eb8ff; text-decoration: none; }
+.app-nav a:hover { text-decoration: underline; }
+.app-nav .sep { color: #666; margin: 0 6px; }
+.metric-list { line-height: 1.75; font-size: 14px; }
+.metric-list .metric-row { margin-bottom: 6px; }
+.metric-list .label { color: #b5b5b5; }
+.metric-list b { color: #fff; font-size: 15px; }
+.report-filters { align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-filters label.filter-label { font-size: 13px; color: #ccc; }
+.report-filters select { min-width: 220px; }
+.report-category-hint { font-size: 12px; color: #9cdcfe; }
+.report-charts-row { align-items: flex-start; }
+.report-chart-card { flex: 1; min-width: 320px; max-width: 920px; }
+.chart-wrap {
+  width: 100%;
+  max-width: 980px;
+  min-height: 480px;
+  margin: 10px auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(360px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.chart-box {
+  position: relative;
+  min-height: 360px;
+  border: 1px solid #343434;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #242424 0%, #1e1e1e 100%);
+  padding: 8px;
+}
+.chart-box canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.chart-title {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: #c8d7ec;
+  font-weight: 600;
+}
+.chart-empty {
+  margin: 8px 0;
+  font-size: 12px;
+  color: #b5b5b5;
+}
+@media (max-width: 920px) {
+  .chart-wrap {
+    grid-template-columns: 1fr;
+  }
+  .chart-box {
+    min-height: 320px;
+  }
+}
+.report-chart-hint { font-size: 11px; margin-top: 6px; }
+.report-slim-card { flex: 1; min-width: 280px; max-width: 100%; }
+.report-slim-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.report-slim-list { max-height: 58vh; overflow: auto; font-size: 11px; border: 1px solid #3e3e3e; border-radius: 8px; background: #1a1a1a; }
+.report-slim-head {
+  display: grid;
+  grid-template-columns: 100px minmax(90px, 120px) minmax(120px, 170px) 34px minmax(170px, 1.2fr) minmax(170px, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+  background: #2f2f2f;
+  font-weight: 600;
+  font-size: 11px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #ddd;
+}
+.report-slim-row {
+  display: grid;
+  grid-template-columns: 100px minmax(90px, 120px) minmax(120px, 170px) 34px minmax(170px, 1.2fr) minmax(170px, 1fr);
+  gap: 8px;
+  padding: 6px 10px;
+  align-items: center;
+  border-bottom: 1px solid #2a2a2a;
+}
+.report-slim-row:nth-child(even) { background: #1e1e1e; }
+.report-slim-pv {
+  width: 96px;
+  height: 96px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1f1f1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.report-slim-pv img { width: 100%; height: 100%; object-fit: cover; }
+.report-slim-kind { font-size: 10px; font-weight: 700; text-align: center; color: #8ab4e8; }
+.report-slim-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.report-slim-cat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #b5b5b5; font-size: 10px; }
+.report-slim-disc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9cc4ff; font-size: 10px; }
+.report-slim-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ddd; font-size: 11px; }
+.report-slim-ph { font-weight: 700; color: #555; font-size: 18px; }
+  
+  </style>
+</head>
+<body>
+  <nav class="app-nav">
+    <a href="/">Elenco famiglie</a>
+    <span class="sep">|</span>
+    <span>Report Status</span>
+  </nav>
+  <div class="brand">
+    <img id="brandLogo" src="/assets/logo.png" alt="Logo" onerror="this.style.display='none'" />
+    <h1 style="margin:0">Report Status</h1>
+  </div>
+  <div id="health" class="muted">Connessione...</div>
+  <div class="row" style="margin-top:12px;">
+    <button type="button" id="btnRefresh">Aggiorna</button>
+  </div>
+  <div class="row">
+    <div class="card" style="min-width:320px;max-width:560px;">
+      <b>Qualità dati</b>
+      <div id="qualityMetrics" class="metric-list">-</div>
+    </div>
+  </div>
+
+  <div class="row report-filters">
+    <label class="filter-label" for="selDiscipline">Disciplina</label>
+    <select id="selDiscipline" aria-label="Filtra per disciplina">
+      <option value="">Tutte</option>
+    </select>
+    <span id="categoryFilterHint" class="report-category-hint"></span>
+  </div>
+
+  <div class="row report-charts-row">
+    <div class="card report-chart-card">
+      <b>Famiglie per categoria</b>
+      <p class="muted report-chart-hint" style="margin:4px 0 0;">Le 10 categorie con più righe nella disciplina selezionata; il resto è in «Altro». Clic su una fetta o su una barra per filtrare l’elenco.</p>
+      <div class="chart-wrap" id="chartWrap">
+        <div class="chart-box">
+          <div class="chart-title">Distribuzione (ciambella)</div>
+          <canvas id="chartCategories" aria-label="Grafico categorie ciambella"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-title">Top categorie (barre)</div>
+          <canvas id="chartBars" aria-label="Grafico categorie barre"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card report-slim-card">
+      <div class="report-slim-toolbar">
+        <b style="margin:0">Tipi e anteprime</b>
+        <button type="button" id="btnClearCategory" style="display:none; padding:5px 12px; font-size:12px;">Mostra tutte le categorie</button>
+      </div>
+      <div id="slimList" class="report-slim-list muted">Caricamento…</div>
+    </div>
+  </div>
+
+  <p class="muted" style="margin-top:12px;font-size:11px;">Dati: GET /api/disciplines, /api/quality, /api/report/category-counts?discipline=…, /api/report/families-slim.</p>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+(function (global) {
+  'use strict';
+
+  global.LS_KEY = 'revitFamilyDbApiKey';
+
+  global.el = function (id) {
+    return document.getElementById(id);
+  };
+
+  global.esc = function (v) {
+    return (v ?? '').toString()
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  };
+
+  global.enc = function (v) {
+    return encodeURIComponent(v ?? '');
+  };
+
+  global.queueAuthHeaders = function () {
+    const k = localStorage.getItem(global.LS_KEY);
+    if (!k) return {};
+    return { Authorization: 'Bearer ' + k };
+  };
+
+  global.api = function (path, opt) {
+    const o = opt || {};
+    const headers = new Headers(o.headers || {});
+    if (path.indexOf('/api/queue') === 0) {
+      const qh = global.queueAuthHeaders();
+      if (qh.Authorization) headers.set('Authorization', qh.Authorization);
+    }
+    return fetch(path, { ...o, headers }).then(async function (r) {
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || r.statusText);
+      }
+      const ct = r.headers.get('content-type');
+      if (ct && ct.indexOf('application/json') >= 0) return r.json();
+      return r.text();
+    });
+  };
+
+  global.apiOptional = async function (path) {
+    try {
+      const r = await fetch(path);
+      if (!r.ok) return null;
+      const ct = r.headers.get('content-type');
+      if (ct && ct.indexOf('application/json') >= 0) return r.json();
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  global.apiOptionalJson = async function (path) {
+    try {
+      const r = await fetch(path);
+      if (!r.ok) return null;
+      return await r.json();
+    } catch {
+      return null;
+    }
+  };
+
+  global.assertNotFileProtocol = function (onError) {
+    if (window.location.protocol === 'file:') {
+      if (typeof onError === 'function') {
+        onError();
+      }
+      throw new Error('Pagina aperta come file locale (file://)');
+    }
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+(async function () {
+  'use strict';
+
+  var el = window.el;
+  var esc = window.esc;
+  var enc = window.enc;
+  var api = window.api;
+  var apiOptional = window.apiOptional;
+  var assertNotFileProtocol = window.assertNotFileProtocol;
+
+  try {
+    assertNotFileProtocol(function () {
+      el('health').innerHTML =
+        '<span style="color:#b00">Apri questa app solo tramite il server: nella cartella Inspector esegui <code>dotnet run</code> (o <code>run-inspector.ps1</code>) e usa l\'indirizzo <code>http://localhost:…</code> mostrato in console. Non aprire <code>index.html</code> da Esplora file.</span>';
+    });
+
+    const ver = await apiOptional('/api/version');
+    const h = await api('/api/health');
+    const verLine = ver
+      ? ' · <span class="muted">' + esc(ver.product) + ' ' + esc(ver.version) + '</span>'
+      : '';
+    el('health').innerHTML =
+      '<span class="ok">Connesso</span> a DB: <b>' + esc(h.dbName) + '</b>' + verLine;
+
+    const q = await api('/api/quality');
+    el('qualityMetrics').innerHTML =
+      '<div class="metric-row"><span class="label">Loadable senza .rfa reale:</span> <b>' + esc(q.loadableWithoutRealRfa) + '</b></div>' +
+      '<div class="metric-row"><span class="label">System senza TypeId:</span> <b>' + esc(q.systemWithoutTypeId) + '</b></div>' +
+      '<div class="metric-row"><span class="label">Senza SourceModelPath:</span> <b>' + esc(q.missingSourceModelPath) + '</b></div>' +
+      '<div class="metric-row"><span class="label">Senza anteprima (PreviewPath):</span> <b>' + esc(q.missingPreviewPath) + '</b></div>';
+
+    const TOP_N = 10;
+    var pieChart = null;
+    var barChart = null;
+    /** @type {string | null} param API: nome categoria, '__ALTRO__', o null */
+    var selectedCategoryParam = null;
+    /** @type {string} etichetta mostrata */
+    var selectedCategoryLabel = '';
+    /** @type {string[]} categorie topN correnti (normalizzate) */
+    var topCategories = [];
+
+    function normCategory(v) {
+      var t = (v || '').toString().trim();
+      return t ? t : '(Senza categoria)';
+    }
+
+    function effectiveDiscipline(row) {
+      var sd = (row.sourceDiscipline || '').toString().trim();
+      if (sd) {
+        return sd.toUpperCase();
+      }
+      var p = ((row.sourceModelPath || '') + '|' + (row.previewPath || '')).toUpperCase();
+      if (p.indexOf('\\ARC\\') >= 0) return 'ARC';
+      if (p.indexOf('\\FUR\\') >= 0) return 'FUR';
+      return '(Senza disciplina)';
+    }
+
+    function splitFamilyType(fullName) {
+      var raw = (fullName || '').toString();
+      var idx = raw.indexOf(' : ');
+      if (idx < 0) {
+        return { family: raw, type: '' };
+      }
+      return {
+        family: raw.substring(0, idx).trim(),
+        type: raw.substring(idx + 3).trim()
+      };
+    }
+
+    function destroyPieChart() {
+      if (pieChart) {
+        pieChart.destroy();
+        pieChart = null;
+      }
+      if (barChart) {
+        barChart.destroy();
+        barChart = null;
+      }
+    }
+
+    function getDisciplineValue() {
+      var s = el('selDiscipline');
+      return s && s.value ? s.value : '';
+    }
+
+    function updateCategoryFilterUi() {
+      var hint = el('categoryFilterHint');
+      var btn = el('btnClearCategory');
+      if (selectedCategoryParam) {
+        hint.textContent = 'Elenco filtrato: ' + (selectedCategoryLabel || selectedCategoryParam);
+        btn.style.display = '';
+      } else {
+        hint.textContent = '';
+        btn.style.display = 'none';
+      }
+    }
+
+    async function fillDisciplines() {
+      var disc = await api('/api/disciplines');
+      var sel = el('selDiscipline');
+      var prev = sel.value;
+      sel.innerHTML = '';
+      var opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = 'Tutte';
+      sel.appendChild(opt0);
+      for (var i = 0; i < disc.length; i++) {
+        var d = disc[i].discipline;
+        var o = document.createElement('option');
+        o.value = d;
+        o.textContent = d;
+        sel.appendChild(o);
+      }
+      if (prev) {
+        sel.value = prev;
+      }
+    }
+
+    function buildCategoryUrl() {
+      var d = getDisciplineValue();
+      return '/api/report/category-counts' + (d ? '?discipline=' + enc(d) : '');
+    }
+
+    function buildFamiliesUrl() {
+      var parts = ['take=5000'];
+      var d = getDisciplineValue();
+      if (d) {
+        parts.push('discipline=' + enc(d));
+      }
+      return '/api/families?' + parts.join('&');
+    }
+
+    async function renderSlimList() {
+      try {
+        var rows = await api(buildFamiliesUrl());
+        var filtered = rows;
+        if (selectedCategoryParam === '__ALTRO__') {
+          filtered = rows.filter(function (x) {
+            return topCategories.indexOf(normCategory(x.categoryName)) < 0;
+          });
+        } else if (selectedCategoryParam) {
+          filtered = rows.filter(function (x) {
+            return normCategory(x.categoryName) === selectedCategoryParam;
+          });
+        }
+        var html =
+          '<div class="report-slim-head"><span>Preview</span><span>Disciplina</span><span>Categoria</span><span title="L=loadable, S=system">L/S</span><span>Nome Famiglia</span><span>Nome Tipo</span></div>';
+        for (var j = 0; j < filtered.length; j++) {
+          var r = filtered[j];
+          var kind = (r.familyKind || '').toLowerCase() === 'system' ? 'S' : 'L';
+          var disc = effectiveDiscipline(r);
+          var names = splitFamilyType(r.familyName);
+          var pv;
+          if (r.previewPath) {
+            pv =
+              '<div class="report-slim-pv"><img src="/api/preview?path=' +
+              enc(r.previewPath) +
+              '" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{className:\'report-slim-ph\',textContent:\'?\'}))" /></div>';
+          } else {
+            var ch = (r.familyName || '?').charAt(0).toUpperCase();
+            pv = '<div class="report-slim-pv"><span class="report-slim-ph">' + esc(ch) + '</span></div>';
+          }
+          html +=
+            '<div class="report-slim-row">' +
+            pv +
+            '<span class="report-slim-disc" title="' +
+            esc(disc) +
+            '">' +
+            esc(disc) +
+            '</span>' +
+            '<span class="report-slim-cat" title="' +
+            esc(normCategory(r.categoryName)) +
+            '">' +
+            esc(normCategory(r.categoryName)) +
+            '</span>' +
+            '<span class="report-slim-kind">' +
+            esc(kind) +
+            '</span>' +
+            '<span class="report-slim-name" title="' +
+            esc(names.family) +
+            '">' +
+            esc(names.family) +
+            '</span>' +
+            '<span class="report-slim-type" title="' +
+            esc(names.type) +
+            '">' +
+            esc(names.type) +
+            '</span></div>';
+        }
+        el('slimList').innerHTML = html || '<p class="muted" style="padding:8px;">Nessuna famiglia.</p>';
+        el('slimList').classList.remove('muted');
+      } catch (slimErr) {
+        el('slimList').textContent =
+          'Elenco: ' + (slimErr && slimErr.message ? slimErr.message : slimErr);
+      }
+    }
+
+    async function rebuildPie() {
+      selectedCategoryParam = null;
+      selectedCategoryLabel = '';
+      updateCategoryFilterUi();
+
+      var chartWrap = el('chartWrap');
+      destroyPieChart();
+      chartWrap.innerHTML =
+        '<div class="chart-box">' +
+        '<div class="chart-title">Distribuzione (ciambella)</div>' +
+        '<canvas id="chartCategories" aria-label="Grafico categorie ciambella"></canvas>' +
+        '</div>' +
+        '<div class="chart-box">' +
+        '<div class="chart-title">Top categorie (barre)</div>' +
+        '<canvas id="chartBars" aria-label="Grafico categorie barre"></canvas>' +
+        '</div>';
+
+      try {
+        var counts = await api(buildCategoryUrl());
+        if (typeof Chart === 'undefined') {
+          chartWrap.innerHTML = '<p class="muted">Chart.js non caricato (rete?).</p>';
+          await renderSlimList();
+          return;
+        }
+        if (!counts || counts.length === 0) {
+          chartWrap.innerHTML = '<p class="chart-empty">Nessuna categoria per questo filtro.</p>';
+          await renderSlimList();
+          return;
+        }
+
+        var labels = [];
+        var data = [];
+        var sliceParam = [];
+        topCategories = [];
+        var other = 0;
+        var i = 0;
+        for (; i < counts.length; i++) {
+          var row = counts[i];
+          if (i < TOP_N) {
+            labels.push(row.categoryName);
+            data.push(row.count);
+            var c = normCategory(row.categoryName);
+            sliceParam.push(c);
+            topCategories.push(c);
+          } else {
+            other += row.count;
+          }
+        }
+        if (other > 0) {
+          labels.push('Altro');
+          data.push(other);
+          sliceParam.push('__ALTRO__');
+        }
+
+        var colors = labels.map(function (_, idx) {
+          return 'hsl(' + ((idx * 37 + 210) % 360) + ', 62%, 46%)';
+        });
+        var borderColors = labels.map(function (_, idx) {
+          return 'hsl(' + ((idx * 37 + 210) % 360) + ', 66%, 30%)';
+        });
+        var total = data.reduce(function (acc, curr) { return acc + curr; }, 0);
+
+        function applyCategoryFilter(idx) {
+          selectedCategoryParam = sliceParam[idx];
+          selectedCategoryLabel = labels[idx];
+          updateCategoryFilterUi();
+          renderSlimList();
+          if (pieChart) {
+            pieChart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+            pieChart.update();
+          }
+          if (barChart) {
+            barChart.setActiveElements([{ datasetIndex: 0, index: idx }]);
+            barChart.update();
+          }
+        }
+
+        var centerTextPlugin = {
+          id: 'centerTextPlugin',
+          afterDatasetsDraw: function (chart) {
+            if (chart.config.type !== 'doughnut') return;
+            var meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data || !meta.data.length) return;
+            var x = meta.data[0].x;
+            var y = meta.data[0].y;
+            var ctx = chart.ctx;
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#8bbcf6';
+            ctx.font = '600 12px "IBM Plex Sans", sans-serif';
+            ctx.fillText('Totale', x, y - 8);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '700 22px "IBM Plex Sans", sans-serif';
+            ctx.fillText(String(total), x, y + 18);
+            ctx.restore();
+          }
+        };
+
+        var canvas = el('chartCategories');
+        pieChart = new Chart(canvas, {
+          type: 'doughnut',
+          data: {
+            labels: labels,
+            datasets: [{
+              data: data,
+              backgroundColor: colors,
+              borderWidth: 2,
+              borderColor: '#1a1a1a',
+              hoverOffset: 10
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '56%',
+            animation: {
+              duration: 650,
+              easing: 'easeOutQuart'
+            },
+            onHover: function (ev, els) {
+              var t = ev.native && ev.native.target ? ev.native.target : ev.target;
+              if (t && t.style) {
+                t.style.cursor = els.length ? 'pointer' : 'default';
+              }
+            },
+            onClick: function (_evt, elements) {
+              if (!elements.length) {
+                return;
+              }
+              applyCategoryFilter(elements[0].index);
+            },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function (ctx) {
+                    var value = ctx.parsed || 0;
+                    var perc = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                    return ' ' + ctx.label + ': ' + value + ' (' + perc + '%)';
+                  }
+                }
+              },
+              legend: {
+                position: 'right',
+                labels: { color: '#ccc', font: { size: 11 }, boxWidth: 14, padding: 10 }
+              }
+            }
+          },
+          plugins: [centerTextPlugin]
+        });
+
+        var barCanvas = el('chartBars');
+        barChart = new Chart(barCanvas, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Numero famiglie',
+              data: data,
+              backgroundColor: colors,
+              borderColor: borderColors,
+              borderWidth: 1.5,
+              borderRadius: 8,
+              borderSkipped: false,
+              maxBarThickness: 26
+            }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+              duration: 650,
+              easing: 'easeOutQuart'
+            },
+            onHover: function (ev, els) {
+              var t = ev.native && ev.native.target ? ev.native.target : ev.target;
+              if (t && t.style) {
+                t.style.cursor = els.length ? 'pointer' : 'default';
+              }
+            },
+            onClick: function (_evt, elements) {
+              if (!elements.length) {
+                return;
+              }
+              applyCategoryFilter(elements[0].index);
+            },
+            scales: {
+              x: {
+                beginAtZero: true,
+                grid: { color: 'rgba(255,255,255,0.08)' },
+                ticks: { color: '#cfd8e3', precision: 0 }
+              },
+              y: {
+                grid: { display: false },
+                ticks: { color: '#d5dbe3', autoSkip: false }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function (ctx) {
+                    var value = ctx.parsed.x || 0;
+                    var perc = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                    return ' ' + value + ' (' + perc + '%)';
+                  }
+                }
+              }
+            }
+          }
+        });
+      } catch (chartErr) {
+        chartWrap.innerHTML =
+          '<p class="muted">Grafico: ' + esc(chartErr && chartErr.message ? chartErr.message : chartErr) + '</p>';
+      }
+
+      await renderSlimList();
+    }
+
+    await fillDisciplines();
+    el('selDiscipline').addEventListener('change', function () {
+      rebuildPie();
+    });
+    el('btnClearCategory').addEventListener('click', function () {
+      selectedCategoryParam = null;
+      selectedCategoryLabel = '';
+      updateCategoryFilterUi();
+      if (pieChart) {
+        pieChart.setActiveElements([]);
+        pieChart.update();
+      }
+      renderSlimList();
+    });
+
+    await rebuildPie();
+  } catch (err) {
+    el('health').textContent = 'Errore: ' + (err && err.message ? err.message : err);
+    el('qualityMetrics').textContent = '—';
+    el('slimList').textContent = '—';
+    var cw = el('chartWrap');
+    if (cw) cw.innerHTML = '<p class="muted">—</p>';
+  }
+
+  el('btnRefresh').addEventListener('click', function () {
+    window.location.reload();
+  });
+})();
+
+  </script>
+</body>
+</html>

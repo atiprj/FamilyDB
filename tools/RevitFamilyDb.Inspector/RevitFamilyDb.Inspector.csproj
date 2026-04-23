@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+  </ItemGroup>
+
+  <!-- Stesso sorgente di Core (evita ProjectReference net48 → net10 / NU1702) -->
+  <ItemGroup>
+    <Compile Include="..\..\src\RevitFamilyDb.Core\ConnectionStringResolver.cs" Link="ConnectionStringResolver.cs" />
+  </ItemGroup>
+
+</Project>

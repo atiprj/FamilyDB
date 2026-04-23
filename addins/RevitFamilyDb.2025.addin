@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>RevitFamilyDb 2025</Name>
+    <Assembly>{ASSEMBLY_PATH}\RevitFamilyDb.Addin2025.dll</Assembly>
+    <AddInId>8D83C886-B739-4ACD-A9DB-1BC78F315B25</AddInId>
+    <FullClassName>RevitFamilyDb.Addin2025.App</FullClassName>
+    <VendorId>RFD</VendorId>
+    <VendorDescription>Revit Family Database</VendorDescription>
+  </AddIn>
+</RevitAddIns>
