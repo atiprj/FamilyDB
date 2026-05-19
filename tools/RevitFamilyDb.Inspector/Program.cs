@@ -1,6 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.StaticFiles;
-using Npgsql;
+using Microsoft.Data.SqlClient;
 using RevitFamilyDb.Core;
 using System.Data;
 using System.Text.Json;
@@ -15,9 +15,9 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 var app = builder.Build();
 
 const string fallbackConn =
-    "Host=127.0.0.1;Port=5432;Database=revit_family_library;Username=postgres;Password=postgres;SSL Mode=Prefer;Trust Server Certificate=true";
+    "Server=.\\REVITLIB;Database=RevitFamilyLibrary;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True;";
 var fromConfig = builder.Configuration.GetConnectionString("RevitFamilyDb");
-var connectionString = ConnectionStringResolver.Resolve(string.IsNullOrWhiteSpace(fromConfig) ? fallbackConn : fromConfig);
+var connectionString = ResolveInspectorConnectionString(fromConfig, fallbackConn);
 
 var apiKey = builder.Configuration["Inspector:ApiKey"];
 
@@ -68,6 +68,48 @@ static bool IsAuthorized(HttpContext ctx, string expected)
     return false;
 }
 
+static string ResolveInspectorConnectionString(string? fromConfig, string fallbackConn)
+{
+    var resolved = ConnectionStringResolver.Resolve(string.IsNullOrWhiteSpace(fromConfig) ? fallbackConn : fromConfig);
+
+    if (TryNormalizeSqlServerConnectionString(resolved, out var normalized))
+    {
+        return normalized;
+    }
+
+    // Se env/registry non sono validi, usa fallback SQL Server.
+    if (!string.Equals(resolved, fallbackConn, StringComparison.Ordinal) &&
+        TryNormalizeSqlServerConnectionString(fallbackConn, out var fallbackNormalized))
+    {
+        return fallbackNormalized;
+    }
+
+    throw new InvalidOperationException(
+        "Connection string non valida per SQL Server. " +
+        "Configura REVIT_FAMILY_DB_CONN o HKCU\\Software\\RevitFamilyDb\\ConnectionString " +
+        "(es. Server=.\\REVITLIB;Database=RevitFamilyLibrary;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True;).");
+}
+
+static bool TryNormalizeSqlServerConnectionString(string? raw, out string normalized)
+{
+    normalized = "";
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        return false;
+    }
+
+    try
+    {
+        var parsed = new SqlConnectionStringBuilder(raw.Trim());
+        normalized = parsed.ConnectionString;
+        return true;
+    }
+    catch (ArgumentException)
+    {
+        return false;
+    }
+}
+
 var staticTypes = new FileExtensionContentTypeProvider();
 staticTypes.Mappings[".html"] = "text/html; charset=utf-8";
 staticTypes.Mappings[".js"] = "application/javascript; charset=utf-8";
@@ -93,9 +135,9 @@ app.MapGet("/api/config", () => Results.Ok(new
 
 app.MapGet("/api/health", async () =>
 {
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand("SELECT current_database();", conn);
+    await using var cmd = new SqlCommand("SELECT DB_NAME();", conn);
     var dbName = Convert.ToString(await cmd.ExecuteScalarAsync()) ?? "N/A";
     return Results.Ok(new { ok = true, dbName });
 });
@@ -103,15 +145,15 @@ app.MapGet("/api/health", async () =>
 app.MapGet("/api/tables", async () =>
 {
     const string sql = @"
-SELECT table_schema || '.' || table_name AS table_name
+SELECT table_schema + '.' + table_name AS table_name
 FROM INFORMATION_SCHEMA.TABLES
 WHERE table_type='BASE TABLE'
-  AND table_schema = 'app'
+  AND table_schema = 'dbo'
 ORDER BY table_schema, table_name;";
 
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     await using var reader = await cmd.ExecuteReaderAsync();
 
     var rows = new List<string>();
@@ -128,31 +170,31 @@ app.MapGet("/api/disciplines", async () =>
     const string sql = @"
 SELECT
   CASE
-    WHEN source_discipline IS NULL OR btrim(source_discipline) = '' THEN
+    WHEN [SourceDiscipline] IS NULL OR LTRIM(RTRIM([SourceDiscipline])) = '' THEN
       CASE
-        WHEN source_model_path LIKE '%\ARC\%' THEN 'ARC'
-        WHEN source_model_path LIKE '%\FUR\%' THEN 'FUR'
+        WHEN [SourceModelPath] LIKE '%\ARC\%' THEN 'ARC'
+        WHEN [SourceModelPath] LIKE '%\FUR\%' THEN 'FUR'
         ELSE '(Senza disciplina)'
       END
-    ELSE UPPER(btrim(source_discipline))
+    ELSE UPPER(LTRIM(RTRIM([SourceDiscipline])))
   END AS discipline,
   COUNT(*) AS total_rows
-FROM app.families
+FROM dbo.Families
 GROUP BY
   CASE
-    WHEN source_discipline IS NULL OR btrim(source_discipline) = '' THEN
+    WHEN [SourceDiscipline] IS NULL OR LTRIM(RTRIM([SourceDiscipline])) = '' THEN
       CASE
-        WHEN source_model_path LIKE '%\ARC\%' THEN 'ARC'
-        WHEN source_model_path LIKE '%\FUR\%' THEN 'FUR'
+        WHEN [SourceModelPath] LIKE '%\ARC\%' THEN 'ARC'
+        WHEN [SourceModelPath] LIKE '%\FUR\%' THEN 'FUR'
         ELSE '(Senza disciplina)'
       END
-    ELSE UPPER(btrim(source_discipline))
+    ELSE UPPER(LTRIM(RTRIM([SourceDiscipline])))
   END
 ORDER BY discipline;";
 
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     await using var reader = await cmd.ExecuteReaderAsync();
 
     var rows = new List<object>();
@@ -176,23 +218,32 @@ app.MapGet("/api/families", async (string? discipline, string? kind, string? cat
 
     const string sql = @"
 SELECT
-  family_id, family_name, category_name, family_kind, source_discipline, source_model_path, rfa_path, preview_path, source_element_type_id, updated_at_utc
-FROM app.families
-WHERE (@Discipline IS NULL OR source_discipline = @Discipline)
-  AND (@Kind IS NULL OR family_kind = @Kind)
-  AND (@Category IS NULL OR category_name = @Category)
+  [FamilyId] AS family_id,
+  [FamilyName] AS family_name,
+  [CategoryName] AS category_name,
+  [FamilyKind] AS family_kind,
+  [SourceDiscipline] AS source_discipline,
+  [SourceModelPath] AS source_model_path,
+  [RfaPath] AS rfa_path,
+  [PreviewPath] AS preview_path,
+  [SourceElementTypeId] AS source_element_type_id,
+  [UpdatedAtUtc] AS updated_at_utc
+FROM dbo.Families
+WHERE (@Discipline IS NULL OR [SourceDiscipline] = @Discipline)
+  AND (@Kind IS NULL OR [FamilyKind] = @Kind)
+  AND (@Category IS NULL OR [CategoryName] = @Category)
   AND (
        @Q IS NULL
-       OR family_name ILIKE '%' || @Q || '%'
-       OR category_name ILIKE '%' || @Q || '%'
-       OR source_model_path ILIKE '%' || @Q || '%'
+       OR [FamilyName] LIKE '%' + @Q + '%'
+       OR [CategoryName] LIKE '%' + @Q + '%'
+       OR [SourceModelPath] LIKE '%' + @Q + '%'
       )
-ORDER BY source_discipline, category_name, family_name
-LIMIT @Take;";
+ORDER BY [SourceDiscipline], [CategoryName], [FamilyName]
+OFFSET 0 ROWS FETCH NEXT @Take ROWS ONLY;";
 
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     cmd.Parameters.AddWithValue("@Take", max);
     cmd.Parameters.AddWithValue("@Discipline", string.IsNullOrWhiteSpace(discipline) ? DBNull.Value : discipline);
     cmd.Parameters.AddWithValue("@Kind", string.IsNullOrWhiteSpace(kind) ? DBNull.Value : kind);
@@ -224,12 +275,24 @@ LIMIT @Take;";
 app.MapGet("/api/family/{familyId:int}", async (int familyId) =>
 {
     const string sql = @"
-SELECT family_id, family_name, category_name, family_kind, source_discipline, source_model_path, rfa_path, preview_path, source_element_type_id, revit_version, approval_status, updated_at_utc
-FROM app.families WHERE family_id = @Id;";
-    await using var conn = new NpgsqlConnection(connectionString);
+SELECT
+  [FamilyId] AS family_id,
+  [FamilyName] AS family_name,
+  [CategoryName] AS category_name,
+  [FamilyKind] AS family_kind,
+  [SourceDiscipline] AS source_discipline,
+  [SourceModelPath] AS source_model_path,
+  [RfaPath] AS rfa_path,
+  [PreviewPath] AS preview_path,
+  [SourceElementTypeId] AS source_element_type_id,
+  [RevitVersion] AS revit_version,
+  [ApprovalStatus] AS approval_status,
+  [UpdatedAtUtc] AS updated_at_utc
+FROM dbo.Families WHERE [FamilyId] = @Id;";
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
     object? fam;
-    await using (var cmd = new NpgsqlCommand(sql, conn))
+    await using (var cmd = new SqlCommand(sql, conn))
     {
         cmd.Parameters.AddWithValue("@Id", familyId);
         await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleRow);
@@ -257,9 +320,13 @@ FROM app.families WHERE family_id = @Id;";
 
     var parameters = new List<object>();
     const string psql = @"
-SELECT parameter_name, parameter_group_name, storage_type, string_value
-FROM app.parameters WHERE family_id = @Fid ORDER BY parameter_name;";
-    await using (var pcmd = new NpgsqlCommand(psql, conn))
+SELECT
+  [ParameterName] AS parameter_name,
+  [ParameterGroupName] AS parameter_group_name,
+  [StorageType] AS storage_type,
+  [StringValue] AS string_value
+FROM dbo.Parameters WHERE [FamilyId] = @Fid ORDER BY [ParameterName];";
+    await using (var pcmd = new SqlCommand(psql, conn))
     {
         pcmd.Parameters.AddWithValue("@Fid", familyId);
         await using var pr = await pcmd.ExecuteReaderAsync();
@@ -296,18 +363,18 @@ app.MapPost("/api/queue/enqueue", async (HttpRequest req) =>
     }
 
     const string ins = @"
-INSERT INTO app.web_to_revit_queue (family_id, status) VALUES (@FamilyId, 'Pending')
-RETURNING queue_id;";
-    await using var conn = new NpgsqlConnection(connectionString);
+INSERT INTO dbo.WebToRevitQueue (FamilyId, Status) VALUES (@FamilyId, N'Pending');
+SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(ins, conn);
+    await using var cmd = new SqlCommand(ins, conn);
     cmd.Parameters.AddWithValue("@FamilyId", body.FamilyId);
     object? o;
     try
     {
         o = await cmd.ExecuteScalarAsync();
     }
-    catch (NpgsqlException ex)
+    catch (SqlException ex)
     {
         return Results.BadRequest("Impossibile accodare (tabella WebToRevitQueue o FK mancante). Esegui Sync da Revit dopo aggiornamento add-in. Dettaglio: " + ex.Message);
     }
@@ -318,10 +385,10 @@ RETURNING queue_id;";
 
 app.MapGet("/api/queue/pending-count", async () =>
 {
-    const string sql = "SELECT COUNT(*) FROM app.web_to_revit_queue WHERE status = 'Pending';";
-    await using var conn = new NpgsqlConnection(connectionString);
+    const string sql = "SELECT COUNT(*) FROM dbo.WebToRevitQueue WHERE [Status] = N'Pending';";
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     object? c;
     try
     {
@@ -373,15 +440,15 @@ app.MapGet("/api/quality", async () =>
 {
     const string sql = @"
 SELECT
-  SUM(CASE WHEN family_kind = 'Loadable' AND (rfa_path NOT LIKE '%.rfa' OR rfa_path IS NULL) THEN 1 ELSE 0 END) AS loadable_without_real_rfa,
-  SUM(CASE WHEN family_kind = 'System' AND source_element_type_id IS NULL THEN 1 ELSE 0 END) AS system_without_type_id,
-  SUM(CASE WHEN source_model_path IS NULL OR btrim(source_model_path) = '' THEN 1 ELSE 0 END) AS missing_source_model_path,
-  SUM(CASE WHEN preview_path IS NULL OR btrim(preview_path) = '' THEN 1 ELSE 0 END) AS missing_preview_path
-FROM app.families;";
+  SUM(CASE WHEN [FamilyKind] = 'Loadable' AND ([RfaPath] NOT LIKE '%.rfa' OR [RfaPath] IS NULL) THEN 1 ELSE 0 END) AS loadable_without_real_rfa,
+  SUM(CASE WHEN [FamilyKind] = 'System' AND [SourceElementTypeId] IS NULL THEN 1 ELSE 0 END) AS system_without_type_id,
+  SUM(CASE WHEN [SourceModelPath] IS NULL OR LTRIM(RTRIM([SourceModelPath])) = '' THEN 1 ELSE 0 END) AS missing_source_model_path,
+  SUM(CASE WHEN [PreviewPath] IS NULL OR LTRIM(RTRIM([PreviewPath])) = '' THEN 1 ELSE 0 END) AS missing_preview_path
+FROM dbo.Families;";
 
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleRow);
     await reader.ReadAsync();
     return Results.Ok(new
@@ -396,17 +463,17 @@ FROM app.families;";
 // Espressione disciplina effettiva (allineata a GET /api/disciplines)
 const string SqlEffectiveDiscipline = """
 CASE
-  WHEN source_discipline IS NULL OR btrim(source_discipline) = '' THEN
+  WHEN [SourceDiscipline] IS NULL OR LTRIM(RTRIM([SourceDiscipline])) = '' THEN
     CASE
-      WHEN source_model_path LIKE '%\ARC\%' THEN 'ARC'
-      WHEN source_model_path LIKE '%\FUR\%' THEN 'FUR'
+      WHEN [SourceModelPath] LIKE '%\ARC\%' THEN 'ARC'
+      WHEN [SourceModelPath] LIKE '%\FUR\%' THEN 'FUR'
       ELSE '(Senza disciplina)'
     END
-  ELSE UPPER(btrim(source_discipline))
+  ELSE UPPER(LTRIM(RTRIM([SourceDiscipline])))
 END
 """;
 
-const string SqlNormCategory = @"coalesce(nullif(btrim(category_name), ''), '(Senza categoria)')";
+const string SqlNormCategory = @"coalesce(nullif(LTRIM(RTRIM([CategoryName])), ''), '(Senza categoria)')";
 
 /// <summary>Conteggi per grafico a torta (categorie famiglia). Opzionale filtro disciplina.</summary>
 app.MapGet("/api/report/category-counts", async (string? discipline) =>
@@ -415,15 +482,15 @@ app.MapGet("/api/report/category-counts", async (string? discipline) =>
 SELECT
   {SqlNormCategory} AS CategoryName,
   COUNT(*) AS Cnt
-FROM app.families
+FROM dbo.Families
 WHERE (@Discipline IS NULL OR ({SqlEffectiveDiscipline}) = @Discipline)
 GROUP BY {SqlNormCategory}
 ORDER BY Cnt DESC, CategoryName;
 """;
 
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     cmd.Parameters.AddWithValue("@Discipline", string.IsNullOrWhiteSpace(discipline) ? DBNull.Value : discipline);
     await using var reader = await cmd.ExecuteReaderAsync();
     var rows = new List<object>();
@@ -460,14 +527,14 @@ app.MapGet("/api/report/families-slim", async (int? take, string? discipline, st
         ? $"""
 ;WITH base AS (
   SELECT
-    family_id,
-    family_name,
-    category_name,
-    family_kind,
-    preview_path,
+    [FamilyId] AS family_id,
+    [FamilyName] AS family_name,
+    [CategoryName] AS category_name,
+    [FamilyKind] AS family_kind,
+    [PreviewPath] AS preview_path,
     {SqlNormCategory} AS NormCat,
     ({SqlEffectiveDiscipline}) AS EffDisc
-  FROM app.families
+  FROM dbo.Families
 ),
 fil AS (
   SELECT * FROM base
@@ -483,7 +550,7 @@ rnk AS (
     GROUP BY NormCat
   ) c
 )
-SELECT
+SELECT TOP (@Take)
   f.family_id,
   f.family_name,
   f.category_name,
@@ -491,26 +558,24 @@ SELECT
   f.preview_path
 FROM fil f
 INNER JOIN rnk ON rnk.NormCat = f.NormCat AND rnk.rk > @TopN
-ORDER BY f.NormCat, f.family_name
-LIMIT @Take;
+ORDER BY f.NormCat, f.family_name;
 """
         : $"""
-SELECT
-  family_id,
-  family_name,
-  category_name,
-  family_kind,
-  preview_path
-FROM app.families
+SELECT TOP (@Take)
+  [FamilyId] AS family_id,
+  [FamilyName] AS family_name,
+  [CategoryName] AS category_name,
+  [FamilyKind] AS family_kind,
+  [PreviewPath] AS preview_path
+FROM dbo.Families
 WHERE (@Discipline IS NULL OR ({SqlEffectiveDiscipline}) = @Discipline)
   AND (@Category IS NULL OR {SqlNormCategory} = @Category)
-ORDER BY category_name, family_name
-LIMIT @Take;
+ORDER BY [CategoryName], [FamilyName];
 """;
 
-    await using var conn = new NpgsqlConnection(connectionString);
+    await using var conn = new SqlConnection(connectionString);
     await conn.OpenAsync();
-    await using var cmd = new NpgsqlCommand(sql, conn);
+    await using var cmd = new SqlCommand(sql, conn);
     cmd.Parameters.AddWithValue("@Take", max);
     cmd.Parameters.AddWithValue("@Discipline", string.IsNullOrWhiteSpace(discipline) ? DBNull.Value : discipline);
     cmd.Parameters.AddWithValue("@Category", !hasCat || isAltro ? DBNull.Value : (object)category!);

@@ -109,13 +109,18 @@ tbody tr:hover { background: #294a6d; }
 }
 .chart-box {
   position: relative;
-  min-height: 360px;
+  height: 380px;
   border: 1px solid #343434;
   border-radius: 10px;
   background: linear-gradient(180deg, #242424 0%, #1e1e1e 100%);
   padding: 8px;
 }
-.chart-box canvas {
+.chart-canvas-wrap {
+  position: relative;
+  height: calc(100% - 24px);
+  min-height: 300px;
+}
+.chart-canvas-wrap canvas {
   width: 100% !important;
   height: 100% !important;
 }
@@ -135,8 +140,9 @@ tbody tr:hover { background: #294a6d; }
     grid-template-columns: 1fr;
   }
   .chart-box {
-    min-height: 320px;
+    height: 340px;
   }
+  .chart-canvas-wrap { min-height: 260px; }
 }
 .report-chart-hint { font-size: 11px; margin-top: 6px; }
 .report-slim-card { flex: 1; min-width: 280px; max-width: 100%; }
@@ -220,11 +226,15 @@ tbody tr:hover { background: #294a6d; }
       <div class="chart-wrap" id="chartWrap">
         <div class="chart-box">
           <div class="chart-title">Distribuzione (ciambella)</div>
-          <canvas id="chartCategories" aria-label="Grafico categorie ciambella"></canvas>
+          <div class="chart-canvas-wrap">
+            <canvas id="chartCategories" aria-label="Grafico categorie ciambella"></canvas>
+          </div>
         </div>
         <div class="chart-box">
           <div class="chart-title">Top categorie (barre)</div>
-          <canvas id="chartBars" aria-label="Grafico categorie barre"></canvas>
+          <div class="chart-canvas-wrap">
+            <canvas id="chartBars" aria-label="Grafico categorie barre"></canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -528,11 +538,15 @@ tbody tr:hover { background: #294a6d; }
       chartWrap.innerHTML =
         '<div class="chart-box">' +
         '<div class="chart-title">Distribuzione (ciambella)</div>' +
+        '<div class="chart-canvas-wrap">' +
         '<canvas id="chartCategories" aria-label="Grafico categorie ciambella"></canvas>' +
+        '</div>' +
         '</div>' +
         '<div class="chart-box">' +
         '<div class="chart-title">Top categorie (barre)</div>' +
+        '<div class="chart-canvas-wrap">' +
         '<canvas id="chartBars" aria-label="Grafico categorie barre"></canvas>' +
+        '</div>' +
         '</div>';
 
       try {
@@ -712,7 +726,17 @@ tbody tr:hover { background: #294a6d; }
               },
               y: {
                 grid: { display: false },
-                ticks: { color: '#d5dbe3', autoSkip: false }
+                ticks: {
+                  color: '#d5dbe3',
+                  autoSkip: false,
+                  font: { size: 11 },
+                  callback: function (value) {
+                    var lbl = this.getLabelForValue(value);
+                    if (!lbl) return '';
+                    var s = String(lbl);
+                    return s.length > 28 ? (s.substring(0, 27) + '…') : s;
+                  }
+                }
               }
             },
             plugins: {
@@ -748,6 +772,10 @@ tbody tr:hover { background: #294a6d; }
       if (pieChart) {
         pieChart.setActiveElements([]);
         pieChart.update();
+      }
+      if (barChart) {
+        barChart.setActiveElements([]);
+        barChart.update();
       }
       renderSlimList();
     });

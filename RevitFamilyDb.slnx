@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/FamCloud.Addin2025/FamCloud.Addin2025.csproj" />
     <Project Path="src/RevitFamilyDb.Addin2023/RevitFamilyDb.Addin2023.csproj" />
     <Project Path="src/RevitFamilyDb.Addin2024/RevitFamilyDb.Addin2024.csproj" />
     <Project Path="src/RevitFamilyDb.Addin2025/RevitFamilyDb.Addin2025.csproj" />

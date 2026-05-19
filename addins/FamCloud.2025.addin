@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>FamCloud 2025</Name>
+    <Assembly>{ASSEMBLY_PATH}\FamCloud.Addin2025.dll</Assembly>
+    <AddInId>63B0F11B-2F86-4EA5-BE1A-E8CF191B9EA2</AddInId>
+    <FullClassName>FamCloud.Addin2025.App</FullClassName>
+    <VendorId>FCL</VendorId>
+    <VendorDescription>FamCloud Connector</VendorDescription>
+  </AddIn>
+</RevitAddIns>

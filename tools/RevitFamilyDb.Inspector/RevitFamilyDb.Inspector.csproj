@@ -8,7 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Data.SqlClient">
+      <Version>7.0.1</Version>
+    </PackageReference>
   </ItemGroup>
 
   <!-- Stesso sorgente di Core (evita ProjectReference net48 → net10 / NU1702) -->
