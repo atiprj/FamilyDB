@@ -21,4 +21,8 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\RevitFamilyDb.Core\RevitFamilyDb.Core.csproj" />
+  </ItemGroup>
+
 </Project>
