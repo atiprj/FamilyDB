@@ -1,19 +1,21 @@
+import { getSupabaseAdminClient } from "@/lib/supabase";
+
 async function getHealth() {
   try {
-    const baseUrl =
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000";
+    const supabase = getSupabaseAdminClient();
+    const { count, error } = await supabase
+      .schema("app")
+      .from("families")
+      .select("*", { count: "exact", head: true });
 
-    const response = await fetch(`${baseUrl}/api/health`, { cache: "no-store" });
-    if (!response.ok) {
-      return { ok: false, error: `HTTP ${response.status}` };
+    if (error) {
+      return { ok: false, error: error.message };
     }
-    return (await response.json()) as {
-      ok: boolean;
-      familiesCount?: number;
-      checkedAtUtc?: string;
-      error?: string;
+
+    return {
+      ok: true,
+      familiesCount: count ?? 0,
+      checkedAtUtc: new Date().toISOString()
     };
   } catch (error) {
     return {
