@@ -163,13 +163,13 @@ namespace FamCloud.Addin2025
                     TaskDialog.Show(
                         "FamCloud",
                         "Nessuna famiglia piazzata nel modello attivo da pubblicare.\n" +
-                        "(Sono escluse annotazioni, tag e viste.)");
+                        "(Loadable + System; escluse annotazioni e tag.)");
                     return Result.Succeeded;
                 }
 
                 var upload = CloudUpsertService.UploadInChunks(uploadItems);
                 var summary =
-                    "Publish progetto → Cloud\n\n" +
+                    "Publish progetto → Cloud (Loadable + System)\n\n" +
                     "Totale: " + upload.Total + "\n" +
                     "Upload OK: " + upload.Uploaded + "\n" +
                     "Fallite: " + upload.Failed + "\n" +
@@ -251,7 +251,84 @@ namespace FamCloud.Addin2025
                 });
             }
 
+            AppendPlacedSystemTypes(doc, repo, dbCache, seen, result);
+
             return result;
+        }
+
+        private static void AppendPlacedSystemTypes(
+            Document doc,
+            FamilyRepository repo,
+            IReadOnlyList<FamilyRecord> dbCache,
+            HashSet<string> seen,
+            List<FamilyUploadItem> result)
+        {
+            var typeIdsSeen = new HashSet<int>();
+
+            foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+            {
+                if (PlacedFamilyRules.IsAnnotation(element))
+                {
+                    continue;
+                }
+
+                var typeId = element.GetTypeId();
+                if (typeId == null || typeId == ElementId.InvalidElementId)
+                {
+                    continue;
+                }
+
+                var elementType = doc.GetElement(typeId) as ElementType;
+                if (elementType == null || elementType is FamilySymbol)
+                {
+                    continue;
+                }
+
+                if (PlacedFamilyRules.IsAnnotation(elementType.Category))
+                {
+                    continue;
+                }
+
+                var typeKey = elementType.Id.IntegerValue;
+                if (!typeIdsSeen.Add(typeKey))
+                {
+                    continue;
+                }
+
+                var placementKey = PlacedFamilyRules.BuildSystemPlacementKey(elementType);
+                if (!seen.Add(placementKey))
+                {
+                    continue;
+                }
+
+                var systemName = PlacedFamilyRules.BuildSystemFamilyName(elementType);
+                var dbMatch = PlacedFamilyRules.TryFindDbMatch(
+                    dbCache,
+                    systemName,
+                    elementType.Category?.Name,
+                    "System");
+                var record = dbMatch != null
+                    ? CloneForPublish(dbMatch, doc)
+                    : PlacedFamilyRules.CreateSystemRecordFromPlacement(doc, elementType);
+
+                if (string.IsNullOrWhiteSpace(record.RfaPath) || string.IsNullOrWhiteSpace(record.FamilyName))
+                {
+                    continue;
+                }
+
+                var parameters = dbMatch?.FamilyId != null
+                    ? repo.GetParametersForFamily(dbMatch.FamilyId.Value)
+                    : PlacedFamilyRules.CollectParameters(elementType);
+
+                var localPreview = PreviewThumbnailHelper.TrySaveTypePreview(elementType, record.RfaPath);
+
+                result.Add(new FamilyUploadItem
+                {
+                    Family = record,
+                    Parameters = CloudUpsertService.TrimParametersForCloud(parameters),
+                    LocalPreviewPath = localPreview
+                });
+            }
         }
 
         private static FamilyRecord CloneForPublish(FamilyRecord source, Document doc)
@@ -332,15 +409,39 @@ namespace FamCloud.Addin2025
             return "L:" + family.Id.IntegerValue + ":" + symbol.Id.IntegerValue;
         }
 
+        public static string BuildSystemPlacementKey(ElementType elementType)
+        {
+            return "S:" + elementType.Id.IntegerValue;
+        }
+
+        public static string BuildSystemFamilyName(ElementType elementType)
+        {
+            if (elementType == null)
+            {
+                return "UnnamedSystem";
+            }
+
+            return string.IsNullOrWhiteSpace(elementType.FamilyName)
+                ? elementType.Name
+                : elementType.FamilyName + " : " + elementType.Name;
+        }
+
         public static FamilyRecord TryFindDbMatch(
             IReadOnlyList<FamilyRecord> dbCache,
             string familyName,
-            string categoryName)
+            string categoryName,
+            string familyKind = null)
         {
             var baseName = NormalizeFamilyBaseName(familyName);
             foreach (var rec in dbCache)
             {
                 if (IsAnnotationCategoryName(rec.CategoryName))
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(familyKind)
+                    && !string.Equals(rec.FamilyKind ?? "", familyKind, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -354,6 +455,24 @@ namespace FamCloud.Addin2025
             }
 
             return null;
+        }
+
+        public static FamilyRecord CreateSystemRecordFromPlacement(Document doc, ElementType elementType)
+        {
+            var docPath = string.IsNullOrWhiteSpace(doc.PathName) ? doc.Title : doc.PathName;
+            var name = BuildSystemFamilyName(elementType);
+
+            return new FamilyRecord
+            {
+                FamilyName = name,
+                CategoryName = elementType.Category?.Name ?? "System",
+                RfaPath = "placed://" + docPath + "#system:" + elementType.Id.IntegerValue,
+                FamilyKind = "System",
+                SourceModelPath = docPath,
+                SourceElementTypeId = elementType.Id.IntegerValue,
+                RevitVersion = int.TryParse(doc.Application.VersionNumber, out var year) ? year : (int?)null,
+                ApprovalStatus = "Draft"
+            };
         }
 
         public static FamilyRecord CreateRecordFromPlacement(Document doc, Family family, FamilySymbol symbol)

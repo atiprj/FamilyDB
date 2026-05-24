@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { fetchCatalogFamilies, isPreviewUrl } from "@/lib/catalog";
+import { CatalogTable } from "@/components/CatalogTable";
+import { fetchCatalogFamilies } from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function CatalogPage({
       </p>
       <h1 style={{ marginTop: 0, fontSize: 30 }}>Catalogo famiglie</h1>
       <p style={{ color: "#94a3b8", marginTop: 0 }}>
-        Elenco completo da Supabase (paginazione automatica). Sync da Revit: FamCloud → Sync ALL → Cloud.
+        Loadable e System da Supabase. Sync: FamCloud → Sync ALL → Cloud.
       </p>
 
       <form
@@ -82,78 +83,7 @@ export default async function CatalogPage({
         </p>
       )}
 
-      <div style={{ overflowX: "auto", border: "1px solid #2b3844", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: "#1e293b", textAlign: "left" }}>
-              <th style={{ ...thStyle, width: 72 }}>Anteprima</th>
-              <th style={thStyle}>Nome</th>
-              <th style={thStyle}>Categoria</th>
-              <th style={thStyle}>Disc.</th>
-              <th style={thStyle}>Tipo</th>
-              <th style={thStyle}>Stato</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((row) => (
-              <tr key={row.family_id} style={{ borderTop: "1px solid #2b3844" }}>
-                <td style={tdStyle}>
-                  {isPreviewUrl(row.preview_path) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={row.preview_path!}
-                      alt=""
-                      width={56}
-                      height={56}
-                      style={{
-                        objectFit: "cover",
-                        borderRadius: 6,
-                        background: "#fff",
-                        display: "block"
-                      }}
-                    />
-                  ) : (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        width: 56,
-                        height: 56,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: 6,
-                        background: "#1e293b",
-                        color: "#64748b",
-                        fontSize: 11
-                      }}
-                    >
-                      —
-                    </span>
-                  )}
-                </td>
-                <td style={tdStyle}>
-                  <Link
-                    href={`/catalog/${row.family_id}`}
-                    style={{ color: "#93c5fd", textDecoration: "none" }}
-                  >
-                    {row.family_name}
-                  </Link>
-                </td>
-                <td style={tdStyle}>{row.category_name ?? "—"}</td>
-                <td style={tdStyle}>{row.source_discipline ?? "—"}</td>
-                <td style={tdStyle}>{row.family_kind ?? "—"}</td>
-                <td style={tdStyle}>{row.approval_status}</td>
-              </tr>
-            ))}
-            {items.length === 0 && !error ? (
-              <tr>
-                <td colSpan={6} style={{ ...tdStyle, color: "#94a3b8" }}>
-                  Nessuna famiglia. In Revit usa FamCloud → Sync ALL → Cloud.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <CatalogTable items={items} />
     </main>
   );
 }
@@ -176,6 +106,3 @@ const buttonStyle: CSSProperties = {
   cursor: "pointer",
   fontWeight: 600
 };
-
-const thStyle: CSSProperties = { padding: "10px 12px" };
-const tdStyle: CSSProperties = { padding: "8px 12px", verticalAlign: "middle" };

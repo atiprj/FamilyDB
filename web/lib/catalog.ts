@@ -194,9 +194,4 @@ export async function fetchFamilyDetail(familyId: number) {
   };
 }
 
-export function isPreviewUrl(path: string | null | undefined): boolean {
-  if (!path) {
-    return false;
-  }
-  return path.startsWith("http://") || path.startsWith("https://");
-}
+export { isPreviewUrl } from "@/lib/preview";

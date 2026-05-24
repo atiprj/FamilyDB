@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { fetchFamilyDetail, isPreviewUrl } from "@/lib/catalog";
+import { fetchFamilyDetail } from "@/lib/catalog";
+import { isPreviewUrl } from "@/lib/preview";
 
 type Params = Promise<{ id: string }>;
 
