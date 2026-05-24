@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -29,10 +31,28 @@ namespace FamCloud.Addin2025
             var assemblyPath = typeof(App).Assembly.Location;
 
             panel.AddItem(new PushButtonData(
-                "FamCloudHealthCheck",
-                "Health API",
+                "FamCloudSyncArc",
+                "Sync ARC\n→ Cloud",
                 assemblyPath,
-                typeof(HealthCheckCommand).FullName));
+                typeof(SyncArcCloudCommand).FullName));
+
+            panel.AddItem(new PushButtonData(
+                "FamCloudSyncFur",
+                "Sync FUR\n→ Cloud",
+                assemblyPath,
+                typeof(SyncFurCloudCommand).FullName));
+
+            panel.AddItem(new PushButtonData(
+                "FamCloudSyncAll",
+                "Sync ALL\n→ Cloud",
+                assemblyPath,
+                typeof(SyncAllCloudCommand).FullName));
+
+            panel.AddItem(new PushButtonData(
+                "FamCloudPublishCatalog",
+                "Publish progetto\n→ Cloud",
+                assemblyPath,
+                typeof(PublishCatalogCommand).FullName));
 
             panel.AddItem(new PushButtonData(
                 "FamCloudPendingQueue",
@@ -41,10 +61,10 @@ namespace FamCloud.Addin2025
                 typeof(PendingQueueCommand).FullName));
 
             panel.AddItem(new PushButtonData(
-                "FamCloudPublishCatalog",
-                "Publish to Cloud",
+                "FamCloudHealthCheck",
+                "Health API",
                 assemblyPath,
-                typeof(PublishCatalogCommand).FullName));
+                typeof(HealthCheckCommand).FullName));
 
             return Result.Succeeded;
         }
@@ -94,31 +114,73 @@ namespace FamCloud.Addin2025
     }
 
     [Transaction(TransactionMode.Manual)]
+    public sealed class SyncArcCloudCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            return LibraryCloudSync.SyncDiscipline(commandData, "ARC", ref message);
+        }
+    }
+
+    [Transaction(TransactionMode.Manual)]
+    public sealed class SyncFurCloudCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            return LibraryCloudSync.SyncDiscipline(commandData, "FUR", ref message);
+        }
+    }
+
+    [Transaction(TransactionMode.Manual)]
+    public sealed class SyncAllCloudCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            return LibraryCloudSync.SyncAll(commandData, ref message);
+        }
+    }
+
+    [Transaction(TransactionMode.Manual)]
     public sealed class PublishCatalogCommand : IExternalCommand
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             try
             {
+                var doc = commandData.Application.ActiveUIDocument?.Document;
+                if (doc == null)
+                {
+                    TaskDialog.Show("FamCloud", "Nessun documento attivo. Apri un modello di progetto.");
+                    return Result.Failed;
+                }
+
                 var repo = LocalDbFactory.CreateRepository();
                 repo.EnsureExtendedSchema();
-                var families = repo.GetFamilies(1000);
-                if (families.Count == 0)
+
+                var uploadItems = BuildUploadItemsFromActiveDocument(doc, repo);
+                if (uploadItems.Count == 0)
                 {
-                    TaskDialog.Show("FamCloud", "Nessuna famiglia nel DB locale da pubblicare.");
+                    TaskDialog.Show(
+                        "FamCloud",
+                        "Nessuna famiglia piazzata nel modello attivo da pubblicare.\n" +
+                        "(Sono escluse annotazioni, tag e viste.)");
                     return Result.Succeeded;
                 }
 
-                var jsonPayload = BuildUpsertPayloadJson(families, repo, out var validCount);
-                if (validCount == 0)
+                var upload = CloudUpsertService.Upload(uploadItems);
+                var summary =
+                    "Publish progetto → Cloud\n\n" +
+                    "Totale: " + upload.Total + "\n" +
+                    "Upload OK: " + upload.Uploaded + "\n" +
+                    "Fallite: " + upload.Failed;
+                if (upload.Errors.Count > 0)
                 {
-                    TaskDialog.Show("FamCloud", "Nessuna famiglia valida da inviare (familyName/rfaPath mancanti).");
-                    return Result.Succeeded;
+                    summary += "\n\nErrori (max 5):\n" +
+                        string.Join("\n", upload.Errors.GetRange(0, Math.Min(5, upload.Errors.Count)));
                 }
 
-                var response = CloudApiClient.PostJson("/api/families/upsert", jsonPayload, includeApiKey: true);
-                TaskDialog.Show("FamCloud", "Publish to Cloud:\n\n" + response);
-                return Result.Succeeded;
+                TaskDialog.Show("FamCloud", summary);
+                return upload.Failed == 0 ? Result.Succeeded : Result.Failed;
             }
             catch (Exception ex)
             {
@@ -128,136 +190,265 @@ namespace FamCloud.Addin2025
             }
         }
 
-        private static string BuildUpsertPayloadJson(
-            System.Collections.Generic.IReadOnlyList<FamilyRecord> families,
-            FamilyRepository repo,
-            out int validCount)
+        private static List<FamilyUploadItem> BuildUploadItemsFromActiveDocument(Document doc, FamilyRepository repo)
         {
-            var sb = new StringBuilder(16384);
-            validCount = 0;
-            sb.Append("{\"items\":[");
-            var firstItem = true;
+            var result = new List<FamilyUploadItem>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var dbCache = repo.GetFamilies(5000);
 
-            foreach (var family in families)
+            var instances = new FilteredElementCollector(doc)
+                .OfClass(typeof(FamilyInstance))
+                .WhereElementIsNotElementType()
+                .Cast<FamilyInstance>();
+
+            foreach (var instance in instances)
             {
-                if (string.IsNullOrWhiteSpace(family.RfaPath) || string.IsNullOrWhiteSpace(family.FamilyName))
+                if (PlacedFamilyRules.IsAnnotation(instance))
                 {
                     continue;
                 }
 
-                var parameters = family.FamilyId.HasValue
-                    ? repo.GetParametersForFamily(family.FamilyId.Value)
-                    : new System.Collections.Generic.List<FamilyParameterRecord>();
-
-                if (!firstItem)
+                var symbol = instance.Symbol;
+                var family = symbol?.Family;
+                if (symbol == null || family == null)
                 {
-                    sb.Append(',');
+                    continue;
                 }
 
-                firstItem = false;
-                validCount++;
-                sb.Append("{\"family\":{");
-                var firstFamilyProp = true;
-                AppendJsonStringProp(sb, "familyName", family.FamilyName, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "categoryName", family.CategoryName, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "rfaPath", family.RfaPath, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "previewPath", family.PreviewPath, ref firstFamilyProp);
-                AppendJsonIntProp(sb, "revitVersion", family.RevitVersion, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "fileHash", family.FileHash, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "approvalStatus", family.ApprovalStatus, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "familyKind", family.FamilyKind, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "sourceModelPath", family.SourceModelPath, ref firstFamilyProp);
-                AppendJsonIntProp(sb, "sourceElementTypeId", family.SourceElementTypeId, ref firstFamilyProp);
-                AppendJsonStringProp(sb, "sourceDiscipline", family.SourceDiscipline, ref firstFamilyProp);
-                sb.Append("},\"parameters\":[");
-
-                for (var i = 0; i < parameters.Count; i++)
+                if (PlacedFamilyRules.IsAnnotation(symbol.Category) || PlacedFamilyRules.IsAnnotation(family.FamilyCategory))
                 {
-                    var p = parameters[i];
-                    if (i > 0)
+                    continue;
+                }
+
+                var placementKey = PlacedFamilyRules.BuildPlacementKey(family, symbol);
+                if (!seen.Add(placementKey))
+                {
+                    continue;
+                }
+
+                var dbMatch = PlacedFamilyRules.TryFindDbMatch(dbCache, family.Name, symbol.Category?.Name);
+                var record = dbMatch != null
+                    ? CloneForPublish(dbMatch, doc)
+                    : PlacedFamilyRules.CreateRecordFromPlacement(doc, family, symbol);
+
+                if (string.IsNullOrWhiteSpace(record.RfaPath) || string.IsNullOrWhiteSpace(record.FamilyName))
+                {
+                    continue;
+                }
+
+                var parameters = dbMatch?.FamilyId != null
+                    ? repo.GetParametersForFamily(dbMatch.FamilyId.Value)
+                    : PlacedFamilyRules.CollectParameters(symbol);
+
+                result.Add(new FamilyUploadItem
+                {
+                    Family = record,
+                    Parameters = CloudUpsertService.TrimParametersForCloud(parameters)
+                });
+            }
+
+            return result;
+        }
+
+        private static FamilyRecord CloneForPublish(FamilyRecord source, Document doc)
+        {
+            return new FamilyRecord
+            {
+                FamilyId = source.FamilyId,
+                FamilyName = source.FamilyName,
+                CategoryName = source.CategoryName,
+                RfaPath = source.RfaPath,
+                PreviewPath = source.PreviewPath,
+                FamilyKind = source.FamilyKind,
+                SourceModelPath = doc.PathName,
+                SourceElementTypeId = source.SourceElementTypeId,
+                SourceDiscipline = source.SourceDiscipline,
+                RevitVersion = source.RevitVersion,
+                FileHash = source.FileHash,
+                ApprovalStatus = source.ApprovalStatus
+            };
+        }
+    }
+
+    internal static class PlacedFamilyRules
+    {
+        public static bool IsAnnotation(Element element)
+        {
+            return element != null && IsAnnotation(element.Category);
+        }
+
+        public static bool IsAnnotation(Category category)
+        {
+            if (category == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (category.CategoryType == CategoryType.Annotation)
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Revit API edge cases on some categories.
+            }
+
+            var name = category.Name ?? "";
+            if (name.IndexOf("annotation", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (name.EndsWith(" Tags", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "Tags", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        public static bool IsAnnotationCategoryName(string categoryName)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName))
+            {
+                return false;
+            }
+
+            return categoryName.IndexOf("annotation", StringComparison.OrdinalIgnoreCase) >= 0
+                || categoryName.EndsWith(" Tags", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(categoryName, "Tags", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static string BuildPlacementKey(Family family, FamilySymbol symbol)
+        {
+            return "L:" + family.Id.IntegerValue + ":" + symbol.Id.IntegerValue;
+        }
+
+        public static FamilyRecord TryFindDbMatch(
+            IReadOnlyList<FamilyRecord> dbCache,
+            string familyName,
+            string categoryName)
+        {
+            var baseName = NormalizeFamilyBaseName(familyName);
+            foreach (var rec in dbCache)
+            {
+                if (IsAnnotationCategoryName(rec.CategoryName))
+                {
+                    continue;
+                }
+
+                var recBase = NormalizeFamilyBaseName(rec.FamilyName);
+                if (string.Equals(recBase, baseName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(rec.CategoryName ?? "", categoryName ?? "", StringComparison.OrdinalIgnoreCase))
+                {
+                    return rec;
+                }
+            }
+
+            return null;
+        }
+
+        public static FamilyRecord CreateRecordFromPlacement(Document doc, Family family, FamilySymbol symbol)
+        {
+            var docPath = string.IsNullOrWhiteSpace(doc.PathName) ? doc.Title : doc.PathName;
+            var familyName = !string.IsNullOrWhiteSpace(symbol.Name) && symbol.Name != family.Name
+                ? family.Name + " : " + symbol.Name
+                : family.Name;
+
+            return new FamilyRecord
+            {
+                FamilyName = familyName,
+                CategoryName = symbol.Category?.Name ?? family.FamilyCategory?.Name ?? "N/A",
+                RfaPath = "placed://" + docPath + "#family:" + family.Id.IntegerValue,
+                FamilyKind = "Loadable",
+                SourceModelPath = docPath,
+                SourceElementTypeId = symbol.Id.IntegerValue,
+                RevitVersion = int.TryParse(doc.Application.VersionNumber, out var year) ? year : (int?)null,
+                ApprovalStatus = "Draft"
+            };
+        }
+
+        public static List<FamilyParameterRecord> CollectParameters(Element elem)
+        {
+            var list = new List<FamilyParameterRecord>();
+            if (elem == null)
+            {
+                return list;
+            }
+
+            foreach (Parameter p in elem.Parameters)
+            {
+                if (p == null || !p.HasValue)
+                {
+                    continue;
+                }
+
+                var def = p.Definition;
+                if (def == null)
+                {
+                    continue;
+                }
+
+                var name = def.Name;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                if (name.Length > 200)
+                {
+                    name = name.Substring(0, 200);
+                }
+
+                var val = p.AsValueString();
+                if (val != null && val.Length > 2000)
+                {
+                    val = val.Substring(0, 2000);
+                }
+
+                var groupName = "";
+                try
+                {
+                    if (def is InternalDefinition idef)
                     {
-                        sb.Append(',');
+                        groupName = idef.GetGroupTypeId().ToString();
                     }
-
-                    sb.Append('{');
-                    var firstParamProp = true;
-                    AppendJsonStringProp(sb, "parameterName", p.ParameterName, ref firstParamProp);
-                    AppendJsonStringProp(sb, "parameterGroupName", p.ParameterGroupName, ref firstParamProp);
-                    AppendJsonStringProp(sb, "storageType", p.StorageType, ref firstParamProp);
-                    AppendJsonStringProp(sb, "stringValue", p.StringValue, ref firstParamProp);
-                    AppendJsonBoolProp(sb, "isInstance", false, ref firstParamProp);
-                    AppendJsonBoolProp(sb, "isShared", false, ref firstParamProp);
-                    sb.Append('}');
+                }
+                catch
+                {
+                    groupName = "";
                 }
 
-                sb.Append("]}");
+                list.Add(new FamilyParameterRecord
+                {
+                    ParameterName = name,
+                    ParameterGroupName = groupName,
+                    StorageType = p.StorageType.ToString(),
+                    StringValue = val
+                });
+
+                if (list.Count >= 500)
+                {
+                    break;
+                }
             }
 
-            sb.Append("]}");
-            return sb.ToString();
+            return list;
         }
 
-        private static void AppendJsonStringProp(StringBuilder sb, string name, string value, ref bool firstProp)
+        private static string NormalizeFamilyBaseName(string familyName)
         {
-            if (!firstProp)
+            if (string.IsNullOrWhiteSpace(familyName))
             {
-                sb.Append(',');
+                return "";
             }
 
-            firstProp = false;
-            sb.Append('"').Append(name).Append("\":");
-            if (value == null)
-            {
-                sb.Append("null");
-                return;
-            }
-
-            sb.Append('"').Append(EscapeJson(value)).Append('"');
-        }
-
-        private static void AppendJsonIntProp(StringBuilder sb, string name, int? value, ref bool firstProp)
-        {
-            if (!firstProp)
-            {
-                sb.Append(',');
-            }
-
-            firstProp = false;
-            sb.Append('"').Append(name).Append("\":");
-            if (value.HasValue)
-            {
-                sb.Append(value.Value);
-            }
-            else
-            {
-                sb.Append("null");
-            }
-        }
-
-        private static void AppendJsonBoolProp(StringBuilder sb, string name, bool value, ref bool firstProp)
-        {
-            if (!firstProp)
-            {
-                sb.Append(',');
-            }
-
-            firstProp = false;
-            sb.Append('"').Append(name).Append("\":").Append(value ? "true" : "false");
-        }
-
-        private static string EscapeJson(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return value ?? "";
-            }
-
-            return value
-                .Replace("\\", "\\\\")
-                .Replace("\"", "\\\"")
-                .Replace("\r", "\\r")
-                .Replace("\n", "\\n")
-                .Replace("\t", "\\t");
+            var idx = familyName.IndexOf(':');
+            return (idx >= 0 ? familyName.Substring(0, idx) : familyName).Trim();
         }
     }
 
@@ -318,6 +509,12 @@ namespace FamCloud.Addin2025
 
         public static string PostJson(string relativePath, string jsonBody, bool includeApiKey)
         {
+            var result = PostJsonDetailed(relativePath, jsonBody, includeApiKey);
+            return $"HTTP {result.StatusCode}\n{result.Body}";
+        }
+
+        public static CloudApiResponse PostJsonDetailed(string relativePath, string jsonBody, bool includeApiKey)
+        {
             var baseUrl = Environment.GetEnvironmentVariable("FAMCLOUD_API_BASE_URL");
             if (string.IsNullOrWhiteSpace(baseUrl))
             {
@@ -353,7 +550,11 @@ namespace FamCloud.Addin2025
                 {
                     var response = client.PostAsync(requestUri, content).GetAwaiter().GetResult();
                     var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    return $"HTTP {(int)response.StatusCode}\n{body}";
+                    return new CloudApiResponse
+                    {
+                        StatusCode = (int)response.StatusCode,
+                        Body = body ?? ""
+                    };
                 }
             }
         }
@@ -363,6 +564,12 @@ namespace FamCloud.Addin2025
             var normalizedBase = baseUrl.TrimEnd('/');
             var normalizedPath = relativePath.StartsWith("/") ? relativePath : "/" + relativePath;
             return normalizedBase + normalizedPath;
+        }
+
+        public sealed class CloudApiResponse
+        {
+            public int StatusCode { get; set; }
+            public string Body { get; set; }
         }
     }
 }

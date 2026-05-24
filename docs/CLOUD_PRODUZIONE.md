@@ -49,10 +49,14 @@ Variabili richieste sui PC utente:
 - `FAMCLOUD_API_BASE_URL` (es. `https://<project>.vercel.app`)
 - `FAMCLOUD_ADDIN_API_KEY` (deve coincidere con `ADDIN_API_KEY`)
 
-L'addin espone due comandi:
+L'addin espone i comandi (tab **FamCloud**):
 
+- `Sync ARC → Cloud` / `Sync FUR → Cloud` / `Sync ALL → Cloud` — legge i file libreria ARC/FUR e upserta su Supabase (come Push libreria di Family DB, ma cloud)
+- `Publish progetto → Cloud` — solo famiglie piazzate nel modello attivo
+- `Pending Queue` — contatore coda cloud
 - `Health API`
-- `Pending Queue`
+
+Catalogo web: `https://<project>.vercel.app/catalog`
 
 ## 5) Hardening consigliato (passo successivo)
 

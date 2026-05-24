@@ -1230,6 +1230,11 @@ internal static class LibrarySync
                 var loadables = new FilteredElementCollector(famDoc).OfClass(typeof(Family)).Cast<Family>();
                 foreach (var fam in loadables)
                 {
+                    if (LibrarySync.IsAnnotationCategory(fam.FamilyCategory))
+                    {
+                        continue;
+                    }
+
                     var familyName = string.IsNullOrWhiteSpace(fam.Name) ? "UnnamedFamily" : fam.Name;
                     sourceKeysSeen.Add(BuildSourceKey("Loadable", familyName, null));
                     var pseudo = "loadable://" + modelPath + "#" + familyName;
@@ -1314,6 +1319,11 @@ internal static class LibrarySync
                     .Where(t => t.Category != null && !(t is FamilySymbol));
                 foreach (var typ in systemTypes)
                 {
+                    if (LibrarySync.IsAnnotationCategory(typ.Category))
+                    {
+                        continue;
+                    }
+
                     var name = string.IsNullOrWhiteSpace(typ.FamilyName) ? typ.Name : typ.FamilyName + " : " + typ.Name;
                     sourceKeysSeen.Add(BuildSourceKey("System", name, typ.Id.IntegerValue));
                     var paramRows = CollectParameters(typ);
@@ -1608,6 +1618,31 @@ internal static class LibrarySync
         {
             return null;
         }
+    }
+
+    internal static bool IsAnnotationCategory(Category category)
+    {
+        if (category == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (category.CategoryType == CategoryType.Annotation)
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        var name = category.Name ?? "";
+        return name.IndexOf("annotation", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.EndsWith(" Tags", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "Tags", StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<FamilyParameterRecord> CollectParameters(Element elem)

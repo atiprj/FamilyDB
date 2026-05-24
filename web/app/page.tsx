@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 async function getHealth() {
@@ -72,11 +73,23 @@ export default async function HomePage() {
         )}
       </section>
 
-      <section style={{ marginTop: 18, color: "#cbd5e1" }}>
-        <h3 style={{ marginBottom: 8 }}>Prossimo step</h3>
-        <p style={{ margin: 0 }}>
-          Posso estendere subito questa app con il catalogo famiglie e i grafici report
-          usando i dati reali dal tuo schema Supabase.
+      <section style={{ marginTop: 18 }}>
+        <Link
+          href="/catalog"
+          style={{
+            display: "inline-block",
+            padding: "12px 20px",
+            borderRadius: 10,
+            background: "#2563eb",
+            color: "#fff",
+            textDecoration: "none",
+            fontWeight: 600
+          }}
+        >
+          Apri catalogo famiglie →
+        </Link>
+        <p style={{ margin: "12px 0 0", color: "#94a3b8", fontSize: 14 }}>
+          In Revit: tab FamCloud → Sync ALL → Cloud per aggiornare il catalogo libreria ARC/FUR.
         </p>
       </section>
     </main>
