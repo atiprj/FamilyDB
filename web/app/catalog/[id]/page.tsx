@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { fetchFamilyDetail } from "@/lib/catalog";
+import { fetchFamilyDetail, isPreviewUrl } from "@/lib/catalog";
 
 type Params = Promise<{ id: string }>;
 
@@ -43,6 +43,24 @@ export default async function FamilyDetailPage({ params }: { params: Params }) {
         {family.category_name ?? "—"} · {family.source_discipline ?? "—"} ·{" "}
         {family.family_kind ?? "—"}
       </p>
+
+      {isPreviewUrl(family.preview_path) ? (
+        <div style={{ marginTop: 16 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={family.preview_path}
+            alt={family.family_name}
+            width={160}
+            height={160}
+            style={{
+              objectFit: "cover",
+              borderRadius: 10,
+              border: "1px solid #334155",
+              background: "#fff"
+            }}
+          />
+        </div>
+      ) : null}
 
       <section
         style={{

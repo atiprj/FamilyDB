@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { fetchCatalogFamilies } from "@/lib/catalog";
+import { fetchCatalogFamilies, isPreviewUrl } from "@/lib/catalog";
+
+export const dynamic = "force-dynamic";
 
 type SearchParams = Promise<{
   q?: string;
@@ -18,23 +20,26 @@ export default async function CatalogPage({
   const discipline = params.discipline?.trim() ?? "";
   const kind = params.kind?.trim() ?? "";
 
-  const { items, error } = await fetchCatalogFamilies({
+  const { items, error, totalLoaded } = await fetchCatalogFamilies({
     q,
     discipline,
-    kind,
-    take: 500
+    kind
   });
 
   return (
-    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 20px" }}>
+    <main style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 20px" }}>
       <p style={{ margin: "0 0 8px" }}>
         <Link href="/" style={{ color: "#60a5fa" }}>
           ← Home
         </Link>
+        {" · "}
+        <Link href="/report" style={{ color: "#60a5fa" }}>
+          Report
+        </Link>
       </p>
       <h1 style={{ marginTop: 0, fontSize: 30 }}>Catalogo famiglie</h1>
       <p style={{ color: "#94a3b8", marginTop: 0 }}>
-        Dati da Supabase (`app.families`). Sincronizza da Revit con FamCloud → Sync ARC/FUR/ALL.
+        Elenco completo da Supabase (paginazione automatica). Sync da Revit: FamCloud → Sync ALL → Cloud.
       </p>
 
       <form
@@ -72,7 +77,8 @@ export default async function CatalogPage({
         <p style={{ color: "#f97316" }}>Errore: {error}</p>
       ) : (
         <p style={{ color: "#cbd5e1", marginBottom: 12 }}>
-          Risultati: <b>{items.length}</b>
+          Visualizzate: <b>{items.length}</b>
+          {totalLoaded !== items.length ? ` (caricate ${totalLoaded})` : null}
         </p>
       )}
 
@@ -80,17 +86,50 @@ export default async function CatalogPage({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#1e293b", textAlign: "left" }}>
+              <th style={{ ...thStyle, width: 72 }}>Anteprima</th>
               <th style={thStyle}>Nome</th>
               <th style={thStyle}>Categoria</th>
               <th style={thStyle}>Disc.</th>
               <th style={thStyle}>Tipo</th>
               <th style={thStyle}>Stato</th>
-              <th style={thStyle}>Aggiornato</th>
             </tr>
           </thead>
           <tbody>
             {items.map((row) => (
               <tr key={row.family_id} style={{ borderTop: "1px solid #2b3844" }}>
+                <td style={tdStyle}>
+                  {isPreviewUrl(row.preview_path) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={row.preview_path!}
+                      alt=""
+                      width={56}
+                      height={56}
+                      style={{
+                        objectFit: "cover",
+                        borderRadius: 6,
+                        background: "#fff",
+                        display: "block"
+                      }}
+                    />
+                  ) : (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        width: 56,
+                        height: 56,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 6,
+                        background: "#1e293b",
+                        color: "#64748b",
+                        fontSize: 11
+                      }}
+                    >
+                      —
+                    </span>
+                  )}
+                </td>
                 <td style={tdStyle}>
                   <Link
                     href={`/catalog/${row.family_id}`}
@@ -103,11 +142,6 @@ export default async function CatalogPage({
                 <td style={tdStyle}>{row.source_discipline ?? "—"}</td>
                 <td style={tdStyle}>{row.family_kind ?? "—"}</td>
                 <td style={tdStyle}>{row.approval_status}</td>
-                <td style={tdStyle}>
-                  {row.updated_at_utc
-                    ? new Date(row.updated_at_utc).toLocaleString("it-IT")
-                    : "—"}
-                </td>
               </tr>
             ))}
             {items.length === 0 && !error ? (
@@ -144,4 +178,4 @@ const buttonStyle: CSSProperties = {
 };
 
 const thStyle: CSSProperties = { padding: "10px 12px" };
-const tdStyle: CSSProperties = { padding: "8px 12px", verticalAlign: "top" };
+const tdStyle: CSSProperties = { padding: "8px 12px", verticalAlign: "middle" };

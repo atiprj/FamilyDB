@@ -1,5 +1,8 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
 
 async function getHealth() {
   try {
@@ -73,25 +76,39 @@ export default async function HomePage() {
         )}
       </section>
 
-      <section style={{ marginTop: 18 }}>
-        <Link
-          href="/catalog"
-          style={{
-            display: "inline-block",
-            padding: "12px 20px",
-            borderRadius: 10,
-            background: "#2563eb",
-            color: "#fff",
-            textDecoration: "none",
-            fontWeight: 600
-          }}
-        >
-          Apri catalogo famiglie →
+      <section style={{ marginTop: 18, display: "flex", flexWrap: "wrap", gap: 12 }}>
+        <Link href="/catalog" style={primaryLinkStyle}>
+          Catalogo famiglie →
         </Link>
-        <p style={{ margin: "12px 0 0", color: "#94a3b8", fontSize: 14 }}>
-          In Revit: tab FamCloud → Sync ALL → Cloud per aggiornare il catalogo libreria ARC/FUR.
-        </p>
+        <Link href="/report" style={secondaryLinkStyle}>
+          Report e grafici →
+        </Link>
       </section>
+      <p style={{ margin: "12px 0 0", color: "#94a3b8", fontSize: 14 }}>
+        Revit: FamCloud → Sync ALL → Cloud (libreria + anteprime). Esegui anche{" "}
+        <code>docs/supabase/002_storage_previews.sql</code> su Supabase per le thumbnail.
+      </p>
     </main>
   );
 }
+
+const primaryLinkStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "12px 20px",
+  borderRadius: 10,
+  background: "#2563eb",
+  color: "#fff",
+  textDecoration: "none",
+  fontWeight: 600
+};
+
+const secondaryLinkStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "12px 20px",
+  borderRadius: 10,
+  background: "#1e293b",
+  border: "1px solid #334155",
+  color: "#f1f5f9",
+  textDecoration: "none",
+  fontWeight: 600
+};

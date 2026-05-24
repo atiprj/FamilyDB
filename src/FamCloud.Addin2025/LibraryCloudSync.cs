@@ -107,12 +107,13 @@ namespace FamCloud.Addin2025
                     return Result.Succeeded;
                 }
 
-                var upload = CloudUpsertService.Upload(items);
+                var upload = CloudUpsertService.UploadInChunks(items);
                 var summary =
                     "Sync " + discipline + " → Cloud\n\n" +
                     "Raccolte: " + upload.Total + "\n" +
                     "Upload OK: " + upload.Uploaded + "\n" +
-                    "Fallite: " + upload.Failed;
+                    "Fallite: " + upload.Failed + "\n" +
+                    "Cicli push: " + upload.Passes;
 
                 if (upload.Errors.Count > 0)
                 {
@@ -165,12 +166,13 @@ namespace FamCloud.Addin2025
                 var familyName = string.IsNullOrWhiteSpace(fam.Name) ? "UnnamedFamily" : fam.Name;
                 var rfaPath = "loadable://" + modelPath + "#" + familyName;
                 var paramRows = new List<FamilyParameterRecord>();
+                ElementType symEt = null;
                 try
                 {
                     var symIds = fam.GetFamilySymbolIds();
                     if (symIds != null && symIds.Count > 0)
                     {
-                        var symEt = famDoc.GetElement(symIds.First()) as ElementType;
+                        symEt = famDoc.GetElement(symIds.First()) as ElementType;
                         if (symEt != null)
                         {
                             paramRows = CollectParameters(symEt);
@@ -181,6 +183,10 @@ namespace FamCloud.Addin2025
                 {
                     // ignore
                 }
+
+                var localPreview = symEt != null
+                    ? PreviewThumbnailHelper.TrySaveTypePreview(symEt, rfaPath)
+                    : null;
 
                 items.Add(new FamilyUploadItem
                 {
@@ -196,7 +202,8 @@ namespace FamCloud.Addin2025
                         FileHash = ComputeRowSignature("Loadable", modelPath, familyName, null, paramRows),
                         ApprovalStatus = "Draft"
                     },
-                    Parameters = CloudUpsertService.TrimParametersForCloud(paramRows)
+                    Parameters = CloudUpsertService.TrimParametersForCloud(paramRows),
+                    LocalPreviewPath = localPreview
                 });
             }
 
@@ -217,6 +224,7 @@ namespace FamCloud.Addin2025
                     : typ.FamilyName + " : " + typ.Name;
                 var paramRows = CollectParameters(typ);
                 var rfaKey = "system://" + modelPath + "#type:" + typ.Id.IntegerValue;
+                var localPreview = PreviewThumbnailHelper.TrySaveTypePreview(typ, rfaKey);
 
                 items.Add(new FamilyUploadItem
                 {
@@ -233,7 +241,8 @@ namespace FamCloud.Addin2025
                         FileHash = ComputeRowSignature("System", modelPath, name, typ.Id.IntegerValue, paramRows),
                         ApprovalStatus = "Draft"
                     },
-                    Parameters = CloudUpsertService.TrimParametersForCloud(paramRows)
+                    Parameters = CloudUpsertService.TrimParametersForCloud(paramRows),
+                    LocalPreviewPath = localPreview
                 });
             }
 

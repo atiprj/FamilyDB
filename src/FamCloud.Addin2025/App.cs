@@ -167,12 +167,13 @@ namespace FamCloud.Addin2025
                     return Result.Succeeded;
                 }
 
-                var upload = CloudUpsertService.Upload(uploadItems);
+                var upload = CloudUpsertService.UploadInChunks(uploadItems);
                 var summary =
                     "Publish progetto → Cloud\n\n" +
                     "Totale: " + upload.Total + "\n" +
                     "Upload OK: " + upload.Uploaded + "\n" +
-                    "Fallite: " + upload.Failed;
+                    "Fallite: " + upload.Failed + "\n" +
+                    "Cicli push: " + upload.Passes;
                 if (upload.Errors.Count > 0)
                 {
                     summary += "\n\nErrori (max 5):\n" +
@@ -194,7 +195,7 @@ namespace FamCloud.Addin2025
         {
             var result = new List<FamilyUploadItem>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var dbCache = repo.GetFamilies(5000);
+            var dbCache = repo.GetFamilies(20000);
 
             var instances = new FilteredElementCollector(doc)
                 .OfClass(typeof(FamilyInstance))
@@ -240,10 +241,13 @@ namespace FamCloud.Addin2025
                     ? repo.GetParametersForFamily(dbMatch.FamilyId.Value)
                     : PlacedFamilyRules.CollectParameters(symbol);
 
+                var localPreview = PreviewThumbnailHelper.TrySaveTypePreview(symbol, record.RfaPath);
+
                 result.Add(new FamilyUploadItem
                 {
                     Family = record,
-                    Parameters = CloudUpsertService.TrimParametersForCloud(parameters)
+                    Parameters = CloudUpsertService.TrimParametersForCloud(parameters),
+                    LocalPreviewPath = localPreview
                 });
             }
 
@@ -538,7 +542,7 @@ namespace FamCloud.Addin2025
 
             using (var client = new HttpClient())
             {
-                client.Timeout = TimeSpan.FromSeconds(60);
+                client.Timeout = TimeSpan.FromSeconds(120);
                 if (includeApiKey && !string.IsNullOrWhiteSpace(apiKey))
                 {
                     client.DefaultRequestHeaders.Authorization =

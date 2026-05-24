@@ -9,6 +9,7 @@ namespace FamCloud.Addin2025
     {
         public FamilyRecord Family { get; set; }
         public List<FamilyParameterRecord> Parameters { get; set; }
+        public string LocalPreviewPath { get; set; }
     }
 
     public sealed class CloudUploadResult
@@ -16,6 +17,7 @@ namespace FamCloud.Addin2025
         public int Total { get; set; }
         public int Uploaded { get; set; }
         public int Failed { get; set; }
+        public int Passes { get; set; }
         public List<string> Errors { get; set; } = new List<string>();
     }
 
@@ -24,6 +26,8 @@ namespace FamCloud.Addin2025
         public const int InitialBatchSize = 5;
         public const int MaxParametersPerFamily = 40;
         public const int MaxParameterValueChars = 400;
+        public const int DefaultUploadChunkSize = 200;
+        public const int DefaultMaxPasses = 8;
 
         public static List<FamilyParameterRecord> TrimParametersForCloud(List<FamilyParameterRecord> parameters)
         {
@@ -40,9 +44,101 @@ namespace FamCloud.Addin2025
             return parameters.GetRange(0, MaxParametersPerFamily);
         }
 
+        /// <summary>
+        /// Upload in chunk cycles (library sync) with retry until done or max passes.
+        /// </summary>
+        public static CloudUploadResult UploadInChunks(
+            IReadOnlyList<FamilyUploadItem> allItems,
+            int chunkSize = DefaultUploadChunkSize,
+            int maxPassesPerChunk = DefaultMaxPasses,
+            bool uploadPreviews = true)
+        {
+            var aggregate = new CloudUploadResult();
+            if (allItems == null || allItems.Count == 0)
+            {
+                return aggregate;
+            }
+
+            aggregate.Total = allItems.Count;
+            if (chunkSize <= 0)
+            {
+                chunkSize = DefaultUploadChunkSize;
+            }
+
+            for (var offset = 0; offset < allItems.Count; offset += chunkSize)
+            {
+                var take = Math.Min(chunkSize, allItems.Count - offset);
+                var chunk = new List<FamilyUploadItem>(take);
+                for (var i = 0; i < take; i++)
+                {
+                    chunk.Add(allItems[offset + i]);
+                }
+
+                var chunkResult = UploadUntilComplete(chunk, maxPassesPerChunk, uploadPreviews);
+                aggregate.Uploaded += chunkResult.Uploaded;
+                aggregate.Failed = aggregate.Total - aggregate.Uploaded;
+                aggregate.Passes = Math.Max(aggregate.Passes, chunkResult.Passes);
+                if (chunkResult.Errors.Count > 0)
+                {
+                    aggregate.Errors.AddRange(chunkResult.Errors);
+                }
+            }
+
+            aggregate.Failed = aggregate.Total - aggregate.Uploaded;
+            return aggregate;
+        }
+
+        public static CloudUploadResult UploadUntilComplete(
+            IReadOnlyList<FamilyUploadItem> uploadItems,
+            int maxPasses = DefaultMaxPasses,
+            bool uploadPreviews = true)
+        {
+            var aggregate = new CloudUploadResult { Total = uploadItems?.Count ?? 0 };
+            if (uploadItems == null || uploadItems.Count == 0)
+            {
+                return aggregate;
+            }
+
+            if (maxPasses < 1)
+            {
+                maxPasses = 1;
+            }
+
+            var pending = new List<FamilyUploadItem>(uploadItems);
+            for (var pass = 1; pass <= maxPasses && pending.Count > 0; pass++)
+            {
+                aggregate.Passes = pass;
+                if (uploadPreviews)
+                {
+                    PreviewThumbnailHelper.AttachCloudPreviews(pending);
+                }
+
+                var failed = new List<FamilyUploadItem>();
+                var passResult = UploadPass(pending, failed);
+                aggregate.Uploaded += passResult.Uploaded;
+                aggregate.Errors.AddRange(passResult.Errors);
+                pending = failed;
+            }
+
+            aggregate.Failed = aggregate.Total - aggregate.Uploaded;
+            if (aggregate.Errors.Count > 10)
+            {
+                aggregate.Errors = aggregate.Errors.GetRange(0, 10);
+            }
+
+            return aggregate;
+        }
+
         public static CloudUploadResult Upload(IReadOnlyList<FamilyUploadItem> uploadItems)
         {
-            var result = new CloudUploadResult { Total = uploadItems?.Count ?? 0 };
+            return UploadUntilComplete(uploadItems, DefaultMaxPasses, true);
+        }
+
+        private static CloudUploadResult UploadPass(
+            IReadOnlyList<FamilyUploadItem> uploadItems,
+            List<FamilyUploadItem> failedItems)
+        {
+            var result = new CloudUploadResult { Total = uploadItems.Count };
             if (uploadItems == null || uploadItems.Count == 0)
             {
                 return result;
@@ -56,6 +152,7 @@ namespace FamCloud.Addin2025
                 var take = Math.Min(batchSize, uploadItems.Count - index);
                 var omitParameters = false;
                 var sent = false;
+                var batchFailed = false;
 
                 for (var attempt = 0; attempt < 8 && !sent; attempt++)
                 {
@@ -80,15 +177,16 @@ namespace FamCloud.Addin2025
                             continue;
                         }
 
-                        result.Failed += take;
-                        result.Errors.Add($"Item {index + 1}: HTTP 413 (payload troppo grande)");
+                        batchFailed = true;
                         sent = true;
+                        result.Errors.Add($"Item {index + 1}: HTTP 413 (payload troppo grande)");
                         continue;
                     }
 
                     if (response.StatusCode < 200 || response.StatusCode >= 300)
                     {
-                        result.Failed += take;
+                        batchFailed = true;
+                        sent = true;
                         var detail = response.Body;
                         if (!string.IsNullOrWhiteSpace(detail) && detail.Length > 120)
                         {
@@ -103,6 +201,14 @@ namespace FamCloud.Addin2025
                     }
 
                     sent = true;
+                }
+
+                if (batchFailed)
+                {
+                    for (var i = 0; i < take; i++)
+                    {
+                        failedItems.Add(uploadItems[index + i]);
+                    }
                 }
 
                 index += take;
@@ -140,6 +246,11 @@ namespace FamCloud.Addin2025
                 AppendJsonStringProp(sb, "familyName", family.FamilyName, ref firstFamilyProp);
                 AppendJsonStringProp(sb, "categoryName", family.CategoryName, ref firstFamilyProp);
                 AppendJsonStringProp(sb, "rfaPath", family.RfaPath, ref firstFamilyProp);
+                if (PreviewThumbnailHelper.IsCloudUrl(family.PreviewPath))
+                {
+                    AppendJsonStringProp(sb, "previewPath", family.PreviewPath, ref firstFamilyProp);
+                }
+
                 AppendJsonIntProp(sb, "revitVersion", family.RevitVersion, ref firstFamilyProp);
                 AppendJsonStringProp(sb, "fileHash", family.FileHash, ref firstFamilyProp);
                 AppendJsonStringProp(sb, "approvalStatus", family.ApprovalStatus, ref firstFamilyProp);
