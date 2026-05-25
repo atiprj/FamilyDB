@@ -138,6 +138,18 @@ namespace FamCloud.Addin2025
                     rows,
                     ref message);
             }
+            catch (MissingMethodException)
+            {
+                message = "RevitFamilyDb.Addin2025.dll non aggiornata.";
+                TaskDialog.Show(
+                    "FamCloud",
+                    "Elenco + Carica richiede Family DB aggiornato.\n\n" +
+                    "Chiudi Revit ed esegui:\n" +
+                    "deploy-famcloud-2025.ps1\n" +
+                    "(oppure deploy-2025.ps1)\n\n" +
+                    "Poi riapri Revit.");
+                return Result.Failed;
+            }
             catch (Exception ex)
             {
                 message = ex.Message;
@@ -240,7 +252,7 @@ namespace FamCloud.Addin2025
 
             foreach (var instance in instances)
             {
-                if (PlacedFamilyRules.IsAnnotation(instance))
+                if (PlacedFamilyRules.ShouldSkip(instance))
                 {
                     continue;
                 }
@@ -252,7 +264,7 @@ namespace FamCloud.Addin2025
                     continue;
                 }
 
-                if (PlacedFamilyRules.IsAnnotation(symbol.Category) || PlacedFamilyRules.IsAnnotation(family.FamilyCategory))
+                if (PlacedFamilyRules.ShouldSkip(symbol.Category) || PlacedFamilyRules.ShouldSkip(family.FamilyCategory))
                 {
                     continue;
                 }
@@ -303,7 +315,7 @@ namespace FamCloud.Addin2025
 
             foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
             {
-                if (PlacedFamilyRules.IsAnnotation(element))
+                if (PlacedFamilyRules.ShouldSkip(element))
                 {
                     continue;
                 }
@@ -320,7 +332,7 @@ namespace FamCloud.Addin2025
                     continue;
                 }
 
-                if (PlacedFamilyRules.IsAnnotation(elementType.Category))
+                if (PlacedFamilyRules.ShouldSkip(elementType.Category))
                 {
                     continue;
                 }
@@ -389,16 +401,21 @@ namespace FamCloud.Addin2025
 
     internal static class PlacedFamilyRules
     {
-        public static bool IsAnnotation(Element element)
+        public static bool ShouldSkip(Element element)
         {
-            return element != null && IsAnnotation(element.Category);
+            return element != null && ShouldSkip(element.Category);
         }
 
-        public static bool IsAnnotation(Category category)
+        public static bool ShouldSkip(Category category)
         {
             if (category == null)
             {
                 return false;
+            }
+
+            if (ExcludedCategoryRules.IsExcludedCategoryName(category.Name))
+            {
+                return true;
             }
 
             try
@@ -428,11 +445,16 @@ namespace FamCloud.Addin2025
             return false;
         }
 
-        public static bool IsAnnotationCategoryName(string categoryName)
+        public static bool ShouldSkipCategoryName(string categoryName)
         {
             if (string.IsNullOrWhiteSpace(categoryName))
             {
                 return false;
+            }
+
+            if (ExcludedCategoryRules.IsExcludedCategoryName(categoryName))
+            {
+                return true;
             }
 
             return categoryName.IndexOf("annotation", StringComparison.OrdinalIgnoreCase) >= 0
@@ -471,7 +493,7 @@ namespace FamCloud.Addin2025
             var baseName = NormalizeFamilyBaseName(familyName);
             foreach (var rec in dbCache)
             {
-                if (IsAnnotationCategoryName(rec.CategoryName))
+                if (ShouldSkipCategoryName(rec.CategoryName))
                 {
                     continue;
                 }

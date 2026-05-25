@@ -160,7 +160,7 @@ namespace FamCloud.Addin2025
             var loadables = new FilteredElementCollector(famDoc).OfClass(typeof(Family)).Cast<Family>();
             foreach (var fam in loadables)
             {
-                if (IsAnnotationCategory(fam.FamilyCategory))
+                if (ShouldSkipCategory(fam.FamilyCategory))
                 {
                     continue;
                 }
@@ -216,7 +216,7 @@ namespace FamCloud.Addin2025
 
             foreach (var typ in systemTypes)
             {
-                if (IsAnnotationCategory(typ.Category))
+                if (ShouldSkipCategory(typ.Category))
                 {
                     continue;
                 }
@@ -286,11 +286,16 @@ namespace FamCloud.Addin2025
             }
         }
 
-        private static bool IsAnnotationCategory(Category category)
+        private static bool ShouldSkipCategory(Category category)
         {
             if (category == null)
             {
                 return false;
+            }
+
+            if (ExcludedCategoryRules.IsExcludedCategoryName(category.Name))
+            {
+                return true;
             }
 
             try

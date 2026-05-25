@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { CatalogCharts } from "@/components/CatalogCharts";
-import { fetchCatalogStats } from "@/lib/catalog";
+import { ReportDashboard } from "@/components/ReportDashboard";
+import { fetchCatalogFamilies, fetchCatalogStats } from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportPage() {
-  const { stats, error } = await fetchCatalogStats();
+  const [{ stats, error }, { items: families, error: familiesError }] =
+    await Promise.all([fetchCatalogStats(), fetchCatalogFamilies()]);
 
   return (
     <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 20px" }}>
@@ -23,8 +24,10 @@ export default async function ReportPage() {
         Statistiche aggregate da Supabase (`app.families`).
       </p>
 
-      {error ? (
-        <p style={{ color: "#f97316" }}>Errore: {error}</p>
+      {error || familiesError ? (
+        <p style={{ color: "#f97316" }}>
+          Errore: {error ?? familiesError}
+        </p>
       ) : stats ? (
         <>
           <div
@@ -42,7 +45,7 @@ export default async function ReportPage() {
             <StatCard label="System" value={stats.byKind.find((k) => k.name === "System")?.count ?? 0} />
           </div>
 
-          <CatalogCharts stats={stats} />
+          <ReportDashboard stats={stats} families={families} />
         </>
       ) : null}
     </main>

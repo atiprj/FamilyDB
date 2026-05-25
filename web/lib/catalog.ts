@@ -1,4 +1,5 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { isExcludedCategoryName } from "@/lib/excluded-categories";
 
 export type CatalogFamilyRow = {
   family_id: number;
@@ -78,7 +79,9 @@ export async function fetchCatalogFamilies(query: CatalogQuery = {}) {
       return { items, error: error.message, totalLoaded: items.length };
     }
 
-    const page = (data ?? []) as CatalogFamilyRow[];
+    const page = ((data ?? []) as CatalogFamilyRow[]).filter(
+      (row) => !isExcludedCategoryName(row.category_name)
+    );
     items.push(...page);
 
     if (page.length < PAGE_SIZE) {
@@ -129,8 +132,14 @@ export async function fetchCatalogStats(): Promise<{
   const disciplineMap = new Map<string, number>();
   const kindMap = new Map<string, number>();
   let withPreview = 0;
+  let total = 0;
 
   for (const row of rows) {
+    if (isExcludedCategoryName(row.category_name)) {
+      continue;
+    }
+
+    total++;
     const cat = row.category_name?.trim() || "Senza categoria";
     categoryMap.set(cat, (categoryMap.get(cat) ?? 0) + 1);
 
@@ -149,7 +158,7 @@ export async function fetchCatalogStats(): Promise<{
 
   return {
     stats: {
-      total: rows.length,
+      total,
       byCategory: [...categoryMap.entries()]
         .map(([name, count]) => ({ name, count }))
         .sort(sortDesc),

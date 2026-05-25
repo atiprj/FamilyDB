@@ -61,8 +61,9 @@ namespace FamCloud.Addin2025
                 return aggregate;
             }
 
-            aggregate.Total = allItems.Count;
-            var prepared = PrepareUploadList(allItems, uploadPreviews, aggregate);
+            var eligible = FilterExcludedCategories(allItems);
+            aggregate.Total = eligible.Count;
+            var prepared = PrepareUploadList(eligible, uploadPreviews, aggregate);
             if (prepared.Count == 0)
             {
                 aggregate.Failed = 0;
@@ -100,6 +101,32 @@ namespace FamCloud.Addin2025
             }
 
             return aggregate;
+        }
+
+        private static List<FamilyUploadItem> FilterExcludedCategories(IReadOnlyList<FamilyUploadItem> allItems)
+        {
+            var list = new List<FamilyUploadItem>();
+            if (allItems == null)
+            {
+                return list;
+            }
+
+            foreach (var item in allItems)
+            {
+                if (item?.Family == null)
+                {
+                    continue;
+                }
+
+                if (ExcludedCategoryRules.IsExcludedCategoryName(item.Family.CategoryName))
+                {
+                    continue;
+                }
+
+                list.Add(item);
+            }
+
+            return list;
         }
 
         private static List<FamilyUploadItem> PrepareUploadList(

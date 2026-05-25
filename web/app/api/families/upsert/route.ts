@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isExcludedCategoryName } from "@/lib/excluded-categories";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { requireAddinApiKey } from "@/lib/api-auth";
 
@@ -68,10 +69,16 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdminClient();
     let upserted = 0;
     let failed = 0;
+    let skipped = 0;
     const errors: string[] = [];
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (isValidItem(item) && isExcludedCategoryName(item.family?.categoryName)) {
+        skipped++;
+        continue;
+      }
+
       if (!isValidItem(item)) {
         failed++;
         errors.push(`Item ${i}: missing familyName or rfaPath`);
@@ -165,6 +172,7 @@ export async function POST(request: Request) {
       ok: failed === 0,
       upserted,
       failed,
+      skipped,
       total: items.length,
       errors: errors.slice(0, 20)
     });

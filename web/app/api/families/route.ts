@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isExcludedCategoryName } from "@/lib/excluded-categories";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
 function toTake(value: string | null): number {
@@ -55,10 +56,10 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json({
-      ok: true,
-      items:
-        data?.map((row) => ({
+    const items =
+      data
+        ?.filter((row) => !isExcludedCategoryName(row.category_name))
+        .map((row) => ({
           familyId: row.family_id,
           familyName: row.family_name,
           categoryName: row.category_name,
@@ -70,7 +71,11 @@ export async function GET(request: Request) {
           sourceModelPath: row.source_model_path,
           sourceElementTypeId: row.source_element_type_id,
           updatedAtUtc: row.updated_at_utc
-        })) ?? []
+        })) ?? [];
+
+    return NextResponse.json({
+      ok: true,
+      items
     });
   } catch (err) {
     return NextResponse.json(

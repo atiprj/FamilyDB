@@ -827,6 +827,186 @@ public class ListFamiliesVisualCommand : IExternalCommand
         return CreatePlaceholderBitmap(row);
     }
 
+    private static void NormalizeRecordForLoad(FamilyRecord record)
+    {
+        if (record == null)
+        {
+            return;
+        }
+
+        if (TryParseSystemPseudo(record.RfaPath, out var systemModel, out var typeId))
+        {
+            if (string.IsNullOrWhiteSpace(record.FamilyKind))
+            {
+                record.FamilyKind = "System";
+            }
+
+            if (!record.SourceElementTypeId.HasValue)
+            {
+                record.SourceElementTypeId = typeId;
+            }
+
+            if (string.IsNullOrWhiteSpace(record.SourceModelPath))
+            {
+                record.SourceModelPath = systemModel;
+            }
+        }
+        else if (TryParseLoadablePseudo(record.RfaPath, out var loadableModel, out _))
+        {
+            if (string.IsNullOrWhiteSpace(record.FamilyKind))
+            {
+                record.FamilyKind = "Loadable";
+            }
+
+            if (string.IsNullOrWhiteSpace(record.SourceModelPath))
+            {
+                record.SourceModelPath = loadableModel;
+            }
+        }
+
+        record.SourceModelPath = ResolveLibraryModelPathForLoad(record.SourceModelPath, record.SourceDiscipline);
+    }
+
+    private static string ResolveLibraryModelPathForLoad(string modelPath, string discipline)
+    {
+        if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+        {
+            return modelPath;
+        }
+
+        if (string.Equals(discipline, "ARC", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(LibrarySync.CatalogArcModelPath))
+        {
+            return LibrarySync.CatalogArcModelPath;
+        }
+
+        if (string.Equals(discipline, "FUR", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(LibrarySync.CatalogFurModelPath))
+        {
+            return LibrarySync.CatalogFurModelPath;
+        }
+
+        return modelPath;
+    }
+
+    private static bool CanLoadRecord(FamilyRecord record)
+    {
+        if (record == null)
+        {
+            return false;
+        }
+
+        if (string.Equals(record.FamilyKind, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            return record.SourceElementTypeId.HasValue
+                   && !string.IsNullOrWhiteSpace(record.SourceModelPath)
+                   && File.Exists(record.SourceModelPath);
+        }
+
+        if (HasRealRfaPath(record.RfaPath))
+        {
+            return true;
+        }
+
+        return CanLoadLoadableFromLibrary(record);
+    }
+
+    private static bool CanLoadLoadableFromLibrary(FamilyRecord record)
+    {
+        if (record == null
+            || string.Equals(record.FamilyKind, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (HasRealRfaPath(record.RfaPath))
+        {
+            return false;
+        }
+
+        var modelPath = record.SourceModelPath;
+        if (string.IsNullOrWhiteSpace(modelPath) && TryParseLoadablePseudo(record.RfaPath, out var parsedModel, out _))
+        {
+            modelPath = parsedModel;
+        }
+
+        modelPath = ResolveLibraryModelPathForLoad(modelPath, record.SourceDiscipline);
+        return !string.IsNullOrWhiteSpace(modelPath)
+               && File.Exists(modelPath)
+               && !string.IsNullOrWhiteSpace(GetLoadableFamilyName(record));
+    }
+
+    private static string GetLoadableFamilyName(FamilyRecord record)
+    {
+        if (record == null)
+        {
+            return null;
+        }
+
+        if (TryParseLoadablePseudo(record.RfaPath, out _, out var parsedName)
+            && !string.IsNullOrWhiteSpace(parsedName))
+        {
+            return parsedName;
+        }
+
+        var name = record.FamilyName ?? "";
+        var split = name.Split(':');
+        return split.Length > 0 ? split[0].Trim() : name.Trim();
+    }
+
+    private static bool HasRealRfaPath(string path)
+    {
+        return !string.IsNullOrWhiteSpace(path)
+               && !path.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase)
+               && !path.StartsWith("system://", StringComparison.OrdinalIgnoreCase)
+               && !path.StartsWith("placed://", StringComparison.OrdinalIgnoreCase)
+               && File.Exists(path);
+    }
+
+    private static bool TryParseLoadablePseudo(string rfaPath, out string modelPath, out string familyName)
+    {
+        modelPath = null;
+        familyName = null;
+        if (string.IsNullOrWhiteSpace(rfaPath)
+            || !rfaPath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var rest = rfaPath.Substring("loadable://".Length);
+        var hash = rest.LastIndexOf('#');
+        if (hash <= 0 || hash >= rest.Length - 1)
+        {
+            return false;
+        }
+
+        modelPath = rest.Substring(0, hash);
+        familyName = rest.Substring(hash + 1);
+        return !string.IsNullOrWhiteSpace(modelPath) && !string.IsNullOrWhiteSpace(familyName);
+    }
+
+    private static bool TryParseSystemPseudo(string rfaPath, out string modelPath, out int typeId)
+    {
+        modelPath = null;
+        typeId = 0;
+        if (string.IsNullOrWhiteSpace(rfaPath)
+            || !rfaPath.StartsWith("system://", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var rest = rfaPath.Substring("system://".Length);
+        var typeMarker = rest.LastIndexOf("#type:", StringComparison.OrdinalIgnoreCase);
+        if (typeMarker <= 0 || typeMarker + 6 >= rest.Length)
+        {
+            return false;
+        }
+
+        modelPath = rest.Substring(0, typeMarker);
+        var idPart = rest.Substring(typeMarker + 6);
+        return !string.IsNullOrWhiteSpace(modelPath) && int.TryParse(idPart, out typeId);
+    }
+
     internal static Result LoadFromRecords(ExternalCommandData commandData, IReadOnlyList<FamilyRecord> items, ref string message)
     {
         try
@@ -841,6 +1021,11 @@ public class ListFamiliesVisualCommand : IExternalCommand
             var itemsToLoad = LibrarySync.IsLibraryModelDocument(targetDoc)
                 ? items.ToList()
                 : items.Where(i => !IsAlreadyInActiveDocument(targetDoc, i)).ToList();
+            foreach (var row in itemsToLoad)
+            {
+                NormalizeRecordForLoad(row);
+            }
+
             var alreadyPresent = items.Count - itemsToLoad.Count;
             if (itemsToLoad.Count == 0)
             {
@@ -860,15 +1045,18 @@ public class ListFamiliesVisualCommand : IExternalCommand
                 .GroupBy(x => x.SourceModelPath + "\0" + x.SourceElementTypeId.Value)
                 .Select(g => g.First())
                 .ToList();
+            var loadableLibraryRows = itemsToLoad
+                .Where(x => CanLoadLoadableFromLibrary(x))
+                .GroupBy(x => x.SourceModelPath, StringComparer.OrdinalIgnoreCase)
+                .ToList();
             var rfaRows = itemsToLoad
                 .Where(x => !string.Equals(x.FamilyKind, "System", StringComparison.OrdinalIgnoreCase)
-                            && !string.IsNullOrWhiteSpace(x.RfaPath)
-                            && File.Exists(x.RfaPath))
-                .GroupBy(x => x.RfaPath)
+                            && HasRealRfaPath(x.RfaPath))
+                .GroupBy(x => x.RfaPath, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .ToList();
 
-            var totalOps = systemRows.Count + rfaRows.Count;
+            var totalOps = systemRows.Count + loadableLibraryRows.Sum(g => g.Count()) + rfaRows.Count;
             var doneOps = 0;
             var progress = CreateProgressForm(totalOps);
             try
@@ -914,6 +1102,87 @@ public class ListFamiliesVisualCommand : IExternalCommand
                 UpdateProgress(progress, doneOps, totalOps, "Import tipi sistema...");
             }
 
+            foreach (var group in loadableLibraryRows)
+            {
+                Document srcDoc = null;
+                try
+                {
+                    srcDoc = app.OpenDocumentFile(group.Key);
+                    foreach (var r in group)
+                    {
+                        try
+                        {
+                            var familyName = GetLoadableFamilyName(r);
+                            if (string.IsNullOrWhiteSpace(familyName))
+                            {
+                                skipped++;
+                                errors.Add(r.FamilyName + ": nome famiglia non valido.");
+                                continue;
+                            }
+
+                            var fam = new FilteredElementCollector(srcDoc).OfClass(typeof(Family)).Cast<Family>()
+                                .FirstOrDefault(f => string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase));
+                            if (fam == null)
+                            {
+                                skipped++;
+                                errors.Add(r.FamilyName + ": non trovata in " + Path.GetFileName(group.Key));
+                                continue;
+                            }
+
+                            var symIds = fam.GetFamilySymbolIds();
+                            if (symIds == null || symIds.Count == 0)
+                            {
+                                skipped++;
+                                errors.Add(r.FamilyName + ": nessun tipo nella libreria.");
+                                continue;
+                            }
+
+                            using (var tx = new Transaction(targetDoc, "Carica famiglia da libreria"))
+                            {
+                                tx.Start();
+                                var opt = new CopyPasteOptions();
+                                opt.SetDuplicateTypeNamesHandler(new UseDestinationTypesHandler());
+                                var copiedIds = ElementTransformUtils.CopyElements(
+                                    srcDoc,
+                                    symIds.ToList(),
+                                    targetDoc,
+                                    Transform.Identity,
+                                    opt);
+                                foreach (var cid in copiedIds)
+                                {
+                                    if (targetDoc.GetElement(cid) is ElementType copiedType)
+                                    {
+                                        TrySetDbSynchStampOnType(targetDoc, copiedType, syncStamp);
+                                    }
+                                }
+
+                                tx.Commit();
+                            }
+
+                            ok++;
+                        }
+                        catch (Exception ex)
+                        {
+                            skipped++;
+                            errors.Add(r.FamilyName + ": " + ex.Message);
+                        }
+
+                        doneOps++;
+                        UpdateProgress(progress, doneOps, totalOps, "Carico da libreria .rvt...");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    skipped += group.Count();
+                    errors.Add("Libreria " + Path.GetFileName(group.Key) + ": " + ex.Message);
+                    doneOps += group.Count();
+                }
+                finally
+                {
+                    srcDoc?.Close(false);
+                }
+            }
+
             foreach (var r in rfaRows)
             {
                 try
@@ -952,17 +1221,7 @@ public class ListFamiliesVisualCommand : IExternalCommand
                 progress.Dispose();
             }
 
-            var notApplicable = itemsToLoad.Count(x =>
-            {
-                if (string.Equals(x.FamilyKind, "System", StringComparison.OrdinalIgnoreCase))
-                {
-                    return !x.SourceElementTypeId.HasValue
-                           || string.IsNullOrWhiteSpace(x.SourceModelPath)
-                           || !File.Exists(x.SourceModelPath);
-                }
-
-                return string.IsNullOrWhiteSpace(x.RfaPath) || !File.Exists(x.RfaPath);
-            });
+            var notApplicable = itemsToLoad.Count(x => !CanLoadRecord(x));
 
             var summary = "Operazioni completate: " + ok + " riuscite.";
             if (alreadyPresent > 0)
@@ -1275,7 +1534,7 @@ internal static class LibrarySync
                 var loadables = new FilteredElementCollector(famDoc).OfClass(typeof(Family)).Cast<Family>();
                 foreach (var fam in loadables)
                 {
-                    if (LibrarySync.IsAnnotationCategory(fam.FamilyCategory))
+                    if (LibrarySync.ShouldSkipCategory(fam.FamilyCategory))
                     {
                         continue;
                     }
@@ -1364,7 +1623,7 @@ internal static class LibrarySync
                     .Where(t => t.Category != null && !(t is FamilySymbol));
                 foreach (var typ in systemTypes)
                 {
-                    if (LibrarySync.IsAnnotationCategory(typ.Category))
+                    if (LibrarySync.ShouldSkipCategory(typ.Category))
                     {
                         continue;
                     }
@@ -1665,11 +1924,16 @@ internal static class LibrarySync
         }
     }
 
-    internal static bool IsAnnotationCategory(Category category)
+    internal static bool ShouldSkipCategory(Category category)
     {
         if (category == null)
         {
             return false;
+        }
+
+        if (ExcludedCategoryRules.IsExcludedCategoryName(category.Name))
+        {
+            return true;
         }
 
         try

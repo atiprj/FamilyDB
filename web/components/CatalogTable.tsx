@@ -89,9 +89,16 @@ export function CatalogTable({ items }: Props) {
         Doppio clic su una riga per aprire parametri e dettagli (senza cambiare pagina).
       </p>
 
-      <div style={{ overflowX: "auto", border: "1px solid #2b3844", borderRadius: 12 }}>
+      <div
+        style={{
+          border: "1px solid #2b3844",
+          borderRadius: 12,
+          maxHeight: "calc(100vh - 300px)",
+          overflow: "auto"
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
+          <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
             <tr style={{ background: "#1e293b", textAlign: "left" }}>
               <th style={{ ...thStyle, width: 72 }}>Anteprima</th>
               <th style={thStyle}>Nome</th>
