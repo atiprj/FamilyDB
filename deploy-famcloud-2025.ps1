@@ -10,7 +10,7 @@ if (-not (Test-Path $src)) {
 
 New-Item -ItemType Directory -Path $dst -Force | Out-Null
 
-foreach ($file in @("FamCloud.Addin2025.dll", "RevitFamilyDb.Core.dll")) {
+foreach ($file in @("FamCloud.Addin2025.dll", "RevitFamilyDb.Core.dll", "RevitFamilyDb.Addin2025.dll")) {
     $from = Join-Path $src $file
     $to = Join-Path $dst $file
     if (-not (Test-Path $from)) {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -53,13 +54,14 @@ namespace FamCloud.Addin2025
             return null;
         }
 
-        public static void AttachCloudPreviews(System.Collections.Generic.IList<FamilyUploadItem> items)
+        public static void AttachCloudPreviews(IReadOnlyList<FamilyUploadItem> items)
         {
             if (items == null || items.Count == 0)
             {
                 return;
             }
 
+            var needUpload = new List<FamilyUploadItem>();
             foreach (var item in items)
             {
                 if (item == null || item.Family == null)
@@ -72,18 +74,30 @@ namespace FamCloud.Addin2025
                     continue;
                 }
 
-                var localPath = item.LocalPreviewPath;
-                if (string.IsNullOrWhiteSpace(localPath) || !File.Exists(localPath))
+                if (string.IsNullOrWhiteSpace(item.LocalPreviewPath) || !File.Exists(item.LocalPreviewPath))
                 {
                     continue;
                 }
 
-                var url = PreviewCloudClient.UploadLocalPng(item.Family.RfaPath, localPath);
-                if (!string.IsNullOrWhiteSpace(url))
-                {
-                    item.Family.PreviewPath = url;
-                }
+                needUpload.Add(item);
             }
+
+            if (needUpload.Count == 0)
+            {
+                return;
+            }
+
+            PreviewCloudClient.UploadBatchAndApply(needUpload);
+        }
+
+        public static int UploadPreviewOnlyBatch(IReadOnlyList<FamilyUploadItem> items)
+        {
+            if (items == null || items.Count == 0)
+            {
+                return 0;
+            }
+
+            return PreviewCloudClient.UploadBatchAndApply(items);
         }
 
         public static bool IsCloudUrl(string value)

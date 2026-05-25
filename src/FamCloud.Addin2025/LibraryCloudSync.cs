@@ -112,6 +112,8 @@ namespace FamCloud.Addin2025
                     "Sync " + discipline + " → Cloud\n\n" +
                     "Raccolte: " + upload.Total + "\n" +
                     "Upload OK: " + upload.Uploaded + "\n" +
+                    "Invariate (saltate): " + upload.SkippedUnchanged + "\n" +
+                    "Solo anteprima: " + upload.PreviewOnlyUpdated + "\n" +
                     "Fallite: " + upload.Failed + "\n" +
                     "Cicli push: " + upload.Passes;
 

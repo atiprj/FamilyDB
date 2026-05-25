@@ -55,6 +55,12 @@ namespace FamCloud.Addin2025
                 typeof(PublishCatalogCommand).FullName));
 
             panel.AddItem(new PushButtonData(
+                "FamCloudListLoad",
+                "Elenco +\nCarica",
+                assemblyPath,
+                typeof(CloudListLoadCommand).FullName));
+
+            panel.AddItem(new PushButtonData(
                 "FamCloudPendingQueue",
                 "Pending Queue",
                 assemblyPath,
@@ -108,6 +114,34 @@ namespace FamCloud.Addin2025
             catch (Exception ex)
             {
                 TaskDialog.Show("FamCloud", "Lettura queue fallita:\n\n" + ex.Message);
+                return Result.Failed;
+            }
+        }
+    }
+
+    [Transaction(TransactionMode.Manual)]
+    public sealed class CloudListLoadCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            try
+            {
+                var rows = CloudCatalogClient.FetchCatalogForBrowse(5000);
+                if (rows.Count == 0)
+                {
+                    TaskDialog.Show("FamCloud", "Catalogo cloud vuoto. Esegui prima Sync ALL → Cloud.");
+                    return Result.Cancelled;
+                }
+
+                return RevitFamilyDb.Addin2025.ListFamiliesVisualCommand.BrowseAndLoadFromCatalog(
+                    commandData,
+                    rows,
+                    ref message);
+            }
+            catch (Exception ex)
+            {
+                message = ex.Message;
+                TaskDialog.Show("FamCloud", "Elenco + Carica fallito:\n\n" + ex.Message);
                 return Result.Failed;
             }
         }
@@ -172,6 +206,8 @@ namespace FamCloud.Addin2025
                     "Publish progetto → Cloud (Loadable + System)\n\n" +
                     "Totale: " + upload.Total + "\n" +
                     "Upload OK: " + upload.Uploaded + "\n" +
+                    "Invariate (saltate): " + upload.SkippedUnchanged + "\n" +
+                    "Solo anteprima: " + upload.PreviewOnlyUpdated + "\n" +
                     "Fallite: " + upload.Failed + "\n" +
                     "Cicli push: " + upload.Passes;
                 if (upload.Errors.Count > 0)

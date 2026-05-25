@@ -23,7 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
     <ProjectReference Include="..\RevitFamilyDb.Core\RevitFamilyDb.Core.csproj" />
+    <ProjectReference Include="..\RevitFamilyDb.Addin2025\RevitFamilyDb.Addin2025.csproj" />
   </ItemGroup>
 
   <ItemGroup>

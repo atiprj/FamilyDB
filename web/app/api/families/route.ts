@@ -17,16 +17,20 @@ export async function GET(request: Request) {
     const category = url.searchParams.get("category")?.trim() ?? "";
     const q = url.searchParams.get("q")?.trim() ?? "";
     const take = toTake(url.searchParams.get("take"));
+    const offset = Math.max(
+      0,
+      Number.parseInt(url.searchParams.get("offset") ?? "0", 10) || 0
+    );
 
     const supabase = getSupabaseAdminClient();
     let query = supabase
       .schema("app")
       .from("families")
       .select(
-        "family_id,family_name,category_name,rfa_path,preview_path,family_kind,approval_status,source_discipline,updated_at_utc"
+        "family_id,family_name,category_name,rfa_path,preview_path,family_kind,approval_status,source_discipline,source_model_path,source_element_type_id,updated_at_utc"
       )
-      .order("updated_at_utc", { ascending: false })
-      .limit(take);
+      .order("family_name", { ascending: true })
+      .range(offset, offset + take - 1);
 
     if (discipline) {
       query = query.eq("source_discipline", discipline);
@@ -63,6 +67,8 @@ export async function GET(request: Request) {
           familyKind: row.family_kind,
           approvalStatus: row.approval_status,
           sourceDiscipline: row.source_discipline,
+          sourceModelPath: row.source_model_path,
+          sourceElementTypeId: row.source_element_type_id,
           updatedAtUtc: row.updated_at_utc
         })) ?? []
     });

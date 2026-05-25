@@ -17,6 +17,8 @@ namespace FamCloud.Addin2025
         public int Total { get; set; }
         public int Uploaded { get; set; }
         public int Failed { get; set; }
+        public int SkippedUnchanged { get; set; }
+        public int PreviewOnlyUpdated { get; set; }
         public int Passes { get; set; }
         public List<string> Errors { get; set; } = new List<string>();
     }
@@ -60,18 +62,25 @@ namespace FamCloud.Addin2025
             }
 
             aggregate.Total = allItems.Count;
+            var prepared = PrepareUploadList(allItems, uploadPreviews, aggregate);
+            if (prepared.Count == 0)
+            {
+                aggregate.Failed = 0;
+                return aggregate;
+            }
+
             if (chunkSize <= 0)
             {
                 chunkSize = DefaultUploadChunkSize;
             }
 
-            for (var offset = 0; offset < allItems.Count; offset += chunkSize)
+            for (var offset = 0; offset < prepared.Count; offset += chunkSize)
             {
-                var take = Math.Min(chunkSize, allItems.Count - offset);
+                var take = Math.Min(chunkSize, prepared.Count - offset);
                 var chunk = new List<FamilyUploadItem>(take);
                 for (var i = 0; i < take; i++)
                 {
-                    chunk.Add(allItems[offset + i]);
+                    chunk.Add(prepared[offset + i]);
                 }
 
                 var chunkResult = UploadUntilComplete(chunk, maxPassesPerChunk, uploadPreviews);
@@ -84,8 +93,60 @@ namespace FamCloud.Addin2025
                 }
             }
 
-            aggregate.Failed = aggregate.Total - aggregate.Uploaded;
+            aggregate.Failed = aggregate.Total - aggregate.SkippedUnchanged - aggregate.Uploaded;
+            if (aggregate.Failed < 0)
+            {
+                aggregate.Failed = 0;
+            }
+
             return aggregate;
+        }
+
+        private static List<FamilyUploadItem> PrepareUploadList(
+            IReadOnlyList<FamilyUploadItem> allItems,
+            bool uploadPreviews,
+            CloudUploadResult aggregate)
+        {
+            var filter = CloudSyncFilterClient.FilterUnchanged(allItems);
+            var toUpload = new List<FamilyUploadItem>();
+            var previewOnly = new List<FamilyUploadItem>();
+
+            foreach (var item in allItems)
+            {
+                if (item?.Family == null || string.IsNullOrWhiteSpace(item.Family.RfaPath))
+                {
+                    continue;
+                }
+
+                var path = item.Family.RfaPath;
+                if (filter.UnchangedRfaPaths.Contains(path))
+                {
+                    if (filter.NeedsPreviewOnlyRfaPaths.Contains(path))
+                    {
+                        previewOnly.Add(item);
+                    }
+                    else
+                    {
+                        aggregate.SkippedUnchanged++;
+                    }
+
+                    continue;
+                }
+
+                toUpload.Add(item);
+            }
+
+            if (uploadPreviews && previewOnly.Count > 0)
+            {
+                aggregate.PreviewOnlyUpdated = PreviewThumbnailHelper.UploadPreviewOnlyBatch(previewOnly);
+            }
+
+            return toUpload;
+        }
+
+        public static CloudUploadResult Upload(IReadOnlyList<FamilyUploadItem> uploadItems)
+        {
+            return UploadInChunks(uploadItems, uploadItems?.Count ?? DefaultUploadChunkSize, DefaultMaxPasses, true);
         }
 
         public static CloudUploadResult UploadUntilComplete(
@@ -104,7 +165,12 @@ namespace FamCloud.Addin2025
                 maxPasses = 1;
             }
 
-            var pending = new List<FamilyUploadItem>(uploadItems);
+            var pending = PrepareUploadList(uploadItems, uploadPreviews, aggregate);
+            if (pending.Count == 0)
+            {
+                aggregate.Failed = 0;
+                return aggregate;
+            }
             for (var pass = 1; pass <= maxPasses && pending.Count > 0; pass++)
             {
                 aggregate.Passes = pass;
@@ -120,18 +186,18 @@ namespace FamCloud.Addin2025
                 pending = failed;
             }
 
-            aggregate.Failed = aggregate.Total - aggregate.Uploaded;
+            aggregate.Failed = aggregate.Total - aggregate.SkippedUnchanged - aggregate.Uploaded;
+            if (aggregate.Failed < 0)
+            {
+                aggregate.Failed = 0;
+            }
+
             if (aggregate.Errors.Count > 10)
             {
                 aggregate.Errors = aggregate.Errors.GetRange(0, 10);
             }
 
             return aggregate;
-        }
-
-        public static CloudUploadResult Upload(IReadOnlyList<FamilyUploadItem> uploadItems)
-        {
-            return UploadUntilComplete(uploadItems, DefaultMaxPasses, true);
         }
 
         private static CloudUploadResult UploadPass(

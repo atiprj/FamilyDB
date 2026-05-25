@@ -130,21 +130,10 @@ export function CatalogTable({ items }: Props) {
                       }}
                     />
                   ) : (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        width: 56,
-                        height: 56,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: 6,
-                        background: "#1e293b",
-                        color: "#64748b",
-                        fontSize: 11
-                      }}
-                    >
-                      —
-                    </span>
+                    <CategoryThumbPlaceholder
+                      label={row.category_name ?? row.family_name}
+                      kind={row.family_kind}
+                    />
                   )}
                 </td>
                 <td style={{ ...tdStyle, color: "#e2e8f0" }}>{row.family_name}</td>
@@ -310,6 +299,35 @@ const thStyle: React.CSSProperties = { padding: "10px 12px", textAlign: "left" }
 const tdStyle: React.CSSProperties = { padding: "8px 12px", verticalAlign: "middle" };
 const dtStyle: React.CSSProperties = { color: "#94a3b8", margin: 0 };
 const ddStyle: React.CSSProperties = { margin: 0, wordBreak: "break-all" };
+function CategoryThumbPlaceholder({
+  label,
+  kind
+}: {
+  label: string | null;
+  kind: string | null;
+}) {
+  const letter = (label ?? kind ?? "?").trim().charAt(0).toUpperCase() || "?";
+  const bg = kind === "System" ? "#334155" : "#1e3a5f";
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        width: 56,
+        height: 56,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 6,
+        background: bg,
+        color: "#e2e8f0",
+        fontSize: 18,
+        fontWeight: 700
+      }}
+    >
+      {letter}
+    </span>
+  );
+}
+
 const closeBtnStyle: React.CSSProperties = {
   padding: "8px 14px",
   borderRadius: 8,

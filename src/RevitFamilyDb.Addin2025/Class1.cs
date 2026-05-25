@@ -212,6 +212,51 @@ public class ListFamiliesVisualCommand : IExternalCommand
         }
     }
 
+    /// <summary>Elenco + Carica da catalogo esterno (es. FamCloud / Supabase).</summary>
+    public static Result BrowseAndLoadFromCatalog(
+        ExternalCommandData commandData,
+        IReadOnlyList<FamilyRecord> catalogRows,
+        ref string message)
+    {
+        try
+        {
+            if (catalogRows == null || catalogRows.Count == 0)
+            {
+                TaskDialog.Show("Family DB", "Catalogo vuoto: nessuna famiglia da mostrare.");
+                return Result.Cancelled;
+            }
+
+            var targetDoc = commandData.Application.ActiveUIDocument.Document;
+            var displayRows = catalogRows.ToList();
+            if (!LibrarySync.IsLibraryModelDocument(targetDoc))
+            {
+                displayRows = catalogRows.Where(r => !IsAlreadyInActiveDocument(targetDoc, r)).ToList();
+            }
+
+            if (displayRows.Count == 0)
+            {
+                TaskDialog.Show(
+                    "Family DB",
+                    "Nessun elemento da mostrare: tutte le voci risultano gia' presenti nel progetto attivo.");
+                return Result.Cancelled;
+            }
+
+            var selected = ShowBrowser(displayRows, commandData.Application);
+            if (selected == null || selected.Count == 0)
+            {
+                return Result.Cancelled;
+            }
+
+            return LoadFromRecords(commandData, selected, ref message);
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            TaskDialog.Show("Family DB", "Elenco catalogo fallito:\n" + ex.Message);
+            return Result.Failed;
+        }
+    }
+
     private static List<FamilyRecord> ShowBrowser(List<FamilyRecord> rows, UIApplication uiapp)
     {
         var app = uiapp.Application;
